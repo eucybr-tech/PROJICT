@@ -1,4 +1,5 @@
 import math
+from datetime import date
 
 from ._validation import validate_nonempty_text, validate_nonnegative_number
 
@@ -13,6 +14,15 @@ class StudioSettings:
     )
     _DEFAULT_ALLOWED_AREAS = ("Pila",)
     _DEFAULT_CLEANING_BUFFER_MINUTES = 0
+    _DEFAULT_LOYALTY_FACEBOOK = "@pearl's signailture"
+    _DEFAULT_LOYALTY_PHONE = "09690811806"
+    _DEFAULT_LOYALTY_TERMS = (
+        "This loyalty card is non-transferable.\n"
+        "Earn sticker for every minimum spend of P500 per visit.\n"
+        "Earn 1 prize draw for every 5 stickers collected!\n"
+        "Card must be presented upon purchase to receive sticker.\n"
+        "Loyalty cards are valid only until expiry date"
+    )
 
     def __init__(
         self,
@@ -26,6 +36,10 @@ class StudioSettings:
         map_latitude: str | int | float = "",
         map_longitude: str | int | float = "",
         map_image_path: str = "",
+        loyalty_facebook: str = _DEFAULT_LOYALTY_FACEBOOK,
+        loyalty_phone: str = _DEFAULT_LOYALTY_PHONE,
+        loyalty_valid_until: str = "",
+        loyalty_terms: str = _DEFAULT_LOYALTY_TERMS,
     ) -> None:
         self._default_travel_fee = validate_nonnegative_number(
             default_travel_fee, "default_travel_fee"
@@ -62,6 +76,18 @@ class StudioSettings:
         self._map_image_path = self._validate_map_text(
             map_image_path, "map_image_path"
         )
+        self._loyalty_facebook = self._validate_map_text(
+            loyalty_facebook, "loyalty_facebook"
+        )
+        self._loyalty_phone = self._validate_map_text(
+            loyalty_phone, "loyalty_phone"
+        )
+        self._loyalty_valid_until = self._validate_valid_until(
+            loyalty_valid_until
+        )
+        if not isinstance(loyalty_terms, str):
+            raise TypeError("loyalty_terms must be a string")
+        self._loyalty_terms = loyalty_terms.strip()
 
     @staticmethod
     def _validate_map_text(value: str, field_name: str) -> str:
@@ -90,6 +116,21 @@ class StudioSettings:
             raise ValueError(
                 f"{field_name} must be between {minimum} and {maximum}"
             )
+        return text
+
+    @staticmethod
+    def _validate_valid_until(value: str) -> str:
+        if not isinstance(value, str):
+            raise TypeError("loyalty_valid_until must be a date or an empty string")
+        text = value.strip()
+        if not text:
+            return ""
+        try:
+            parsed = date.fromisoformat(text)
+        except ValueError as error:
+            raise ValueError("loyalty_valid_until must use YYYY-MM-DD format") from error
+        if parsed.isoformat() != text:
+            raise ValueError("loyalty_valid_until must use YYYY-MM-DD format")
         return text
 
     @staticmethod
@@ -157,3 +198,19 @@ class StudioSettings:
     @property
     def map_image_path(self) -> str:
         return self._map_image_path
+
+    @property
+    def loyalty_facebook(self) -> str:
+        return self._loyalty_facebook
+
+    @property
+    def loyalty_phone(self) -> str:
+        return self._loyalty_phone
+
+    @property
+    def loyalty_valid_until(self) -> str:
+        return self._loyalty_valid_until
+
+    @property
+    def loyalty_terms(self) -> str:
+        return self._loyalty_terms

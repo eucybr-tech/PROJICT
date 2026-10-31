@@ -79,6 +79,12 @@ class StudioSettingsScreen(BasePage):
         self._loyalty_web_toggle.toggled.connect(self._set_web_server_running)
         self._loyalty_web_status = QLabel("Stopped")
         self._loyalty_web_status.setWordWrap(True)
+        self._loyalty_facebook = QLineEdit()
+        self._loyalty_phone = QLineEdit()
+        self._loyalty_valid_until = QLineEdit()
+        self._loyalty_valid_until.setPlaceholderText("YYYY-MM-DD (optional)")
+        self._loyalty_terms = QTextEdit()
+        self._loyalty_terms.setMaximumHeight(150)
         save_button = QPushButton("Save")
         save_button.clicked.connect(self.save_settings)
 
@@ -99,6 +105,10 @@ class StudioSettingsScreen(BasePage):
         form.addRow("Loyalty web server port", self._loyalty_web_port)
         form.addRow("Loyalty web server", self._loyalty_web_toggle)
         form.addRow("Server status", self._loyalty_web_status)
+        form.addRow("Loyalty Facebook handle", self._loyalty_facebook)
+        form.addRow("Loyalty contact phone", self._loyalty_phone)
+        form.addRow("Loyalty valid until", self._loyalty_valid_until)
+        form.addRow("Loyalty terms (one per line)", self._loyalty_terms)
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel("Studio Settings"))
         layout.addLayout(form)
@@ -124,6 +134,10 @@ class StudioSettingsScreen(BasePage):
         self._map_image_path = settings.map_image_path
         self._show_map_image(self._resolve_map_image_path(self._map_image_path))
         self._loyalty_web_port.setValue(loyalty_web_port)
+        self._loyalty_facebook.setText(settings.loyalty_facebook)
+        self._loyalty_phone.setText(settings.loyalty_phone)
+        self._loyalty_valid_until.setText(settings.loyalty_valid_until)
+        self._loyalty_terms.setPlainText(settings.loyalty_terms)
         self._refresh_server_status()
 
     def save_settings(self) -> None:
@@ -160,6 +174,10 @@ class StudioSettingsScreen(BasePage):
                 self._map_latitude.text(),
                 self._map_longitude.text(),
                 self._map_image_path,
+                self._loyalty_facebook.text(),
+                self._loyalty_phone.text(),
+                self._loyalty_valid_until.text(),
+                self._loyalty_terms.toPlainText(),
             )
         except (sqlite3.Error, TypeError, ValueError) as error:
             QMessageBox.warning(self, "Invalid studio settings", str(error))

@@ -463,7 +463,9 @@ class CustomerWindow(BaseWindow):
             self._studio_info, schedule_manager, studio_settings_manager
         )
         self._queue_page = QueueScreen(queue_manager)
-        self._loyalty_page = LoyaltyScreen(loyalty_manager)
+        self._loyalty_page = LoyaltyScreen(
+            loyalty_manager, settings_manager=studio_settings_manager
+        )
         self._gallery_page = GalleryScreen(gallery_manager)
         self.add_screen("Appointment", self._appointment_page)
         self.add_screen("Catalog", self._catalog_page)

@@ -169,7 +169,16 @@ class Database:
                 maps_embed_url TEXT NOT NULL DEFAULT '',
                 map_latitude TEXT NOT NULL DEFAULT '',
                 map_longitude TEXT NOT NULL DEFAULT '',
-                map_image_path TEXT NOT NULL DEFAULT ''
+                map_image_path TEXT NOT NULL DEFAULT '',
+                loyalty_facebook TEXT NOT NULL DEFAULT '@pearl''s signailture',
+                loyalty_phone TEXT NOT NULL DEFAULT '09690811806',
+                loyalty_valid_until TEXT NOT NULL DEFAULT '',
+                loyalty_terms TEXT NOT NULL DEFAULT
+                    'This loyalty card is non-transferable.
+Earn sticker for every minimum spend of P500 per visit.
+Earn 1 prize draw for every 5 stickers collected!
+Card must be presented upon purchase to receive sticker.
+Loyalty cards are valid only until expiry date'
             );
             CREATE TABLE IF NOT EXISTS weekly_hours (
                 weekday INTEGER PRIMARY KEY CHECK (weekday BETWEEN 0 AND 6),
@@ -372,6 +381,16 @@ class Database:
                 "map_latitude": "TEXT NOT NULL DEFAULT ''",
                 "map_longitude": "TEXT NOT NULL DEFAULT ''",
                 "map_image_path": "TEXT NOT NULL DEFAULT ''",
+                "loyalty_facebook": "TEXT NOT NULL DEFAULT '@pearl''s signailture'",
+                "loyalty_phone": "TEXT NOT NULL DEFAULT '09690811806'",
+                "loyalty_valid_until": "TEXT NOT NULL DEFAULT ''",
+                "loyalty_terms": (
+                    "TEXT NOT NULL DEFAULT 'This loyalty card is non-transferable.\n"
+                    "Earn sticker for every minimum spend of P500 per visit.\n"
+                    "Earn 1 prize draw for every 5 stickers collected!\n"
+                    "Card must be presented upon purchase to receive sticker.\n"
+                    "Loyalty cards are valid only until expiry date'"
+                ),
             },
         }
         for table_name, columns in migrations.items():
@@ -1530,7 +1549,9 @@ class Database:
             """
             SELECT default_travel_fee, travel_buffer_minutes, service_area_note,
                    allowed_areas, cleaning_buffer_minutes, studio_address,
-                   maps_embed_url, map_latitude, map_longitude, map_image_path
+                   maps_embed_url, map_latitude, map_longitude, map_image_path,
+                   loyalty_facebook, loyalty_phone, loyalty_valid_until,
+                   loyalty_terms
             FROM studio_settings WHERE setting_id = 1
             """
         ).fetchone()
@@ -1547,6 +1568,10 @@ class Database:
             row["map_latitude"],
             row["map_longitude"],
             row["map_image_path"],
+            row["loyalty_facebook"],
+            row["loyalty_phone"],
+            row["loyalty_valid_until"],
+            row["loyalty_terms"],
         )
 
     def update_studio_settings(self, settings: StudioSettings) -> None:
@@ -1559,8 +1584,9 @@ class Database:
                     (setting_id, default_travel_fee, travel_buffer_minutes,
                      service_area_note, allowed_areas, cleaning_buffer_minutes,
                      studio_address, maps_embed_url, map_latitude,
-                     map_longitude, map_image_path)
-                VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     map_longitude, map_image_path, loyalty_facebook,
+                     loyalty_phone, loyalty_valid_until, loyalty_terms)
+                VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(setting_id) DO UPDATE SET
                     default_travel_fee = excluded.default_travel_fee,
                     travel_buffer_minutes = excluded.travel_buffer_minutes,
@@ -1571,7 +1597,11 @@ class Database:
                     maps_embed_url = excluded.maps_embed_url,
                     map_latitude = excluded.map_latitude,
                     map_longitude = excluded.map_longitude,
-                    map_image_path = excluded.map_image_path
+                    map_image_path = excluded.map_image_path,
+                    loyalty_facebook = excluded.loyalty_facebook,
+                    loyalty_phone = excluded.loyalty_phone,
+                    loyalty_valid_until = excluded.loyalty_valid_until,
+                    loyalty_terms = excluded.loyalty_terms
                 """,
                 (
                     settings.default_travel_fee,
@@ -1584,6 +1614,10 @@ class Database:
                     settings.map_latitude,
                     settings.map_longitude,
                     settings.map_image_path,
+                    settings.loyalty_facebook,
+                    settings.loyalty_phone,
+                    settings.loyalty_valid_until,
+                    settings.loyalty_terms,
                 ),
             )
 

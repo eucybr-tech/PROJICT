@@ -8,11 +8,13 @@ import sys
 import threading
 import time
 from collections import deque
+from datetime import date
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit
 
 from database import Database
+from models import StudioSettings
 
 
 _CODE_PATTERN = re.compile(r"[A-Za-z0-9_-]{22}\Z")
@@ -208,7 +210,9 @@ class LoyaltyWebServer:
                 if card is None:
                     self._send(404, "text/plain; charset=utf-8", "Not found")
                     return
-                html_page = owner._card_page(*card)
+                html_page = owner._card_page(
+                    *card, settings=database.get_studio_settings()
+                )
                 self._send(200, "text/html; charset=utf-8", html_page)
 
             def _serve_status_page(self, status: str, code: int) -> None:
@@ -256,22 +260,61 @@ class LoyaltyWebServer:
             requests.append(now)
             return True
 
-    def _card_page(self, full_name: str, stamps: int) -> str:
-        first_name = html.escape(full_name.split(maxsplit=1)[0] if full_name else "Customer")
-        safe_salon_name = html.escape(self._salon_name)
-        logo_data = self._logo_data_uri()
-        safe_logo_data = html.escape(logo_data, quote=True)
-        filled = min(max(stamps, 0), 10)
-        circles = "".join(
-            f'<span class="stamp{" filled" if index < filled else ""}" aria-label="'
-            f'{"Earned" if index < filled else "Not yet earned"} stamp"></span>'
-            for index in range(10)
+    def _card_page(
+        self,
+        full_name: str,
+        stamps: int,
+        settings: StudioSettings | None = None,
+    ) -> str:
+        settings = settings or StudioSettings()
+        first_name = html.escape(
+            full_name.split(maxsplit=1)[0] if full_name else "Customer"
         )
-        reward_ready = stamps >= 10
+        safe_salon_name = html.escape(self._salon_name)
+        safe_logo_data = html.escape(self._logo_data_uri(), quote=True)
+        safe_facebook = html.escape(settings.loyalty_facebook)
+        safe_phone = html.escape(settings.loyalty_phone)
+        filled = min(max(stamps, 0), 10)
+        circles: list[str] = []
+        gift_icon = (
+            '<svg class="gift" viewBox="0 0 24 24" aria-hidden="true">'
+            '<path d="M3 10h18v3H3zM5 13h14v8H5zM4 7h16v3H4z" '
+            'fill="currentColor"/><path d="M12 7v14M12 7H8.5a2.5 2.5 0 1 1 '
+            '2.5-2.5V7Zm0 0h3.5a2.5 2.5 0 1 0-2.5-2.5V7Z" '
+            'fill="none" stroke="currentColor" stroke-width="1.7" '
+            'stroke-linecap="round" stroke-linejoin="round"/></svg>'
+        )
+        for index in range(10):
+            earned = index < filled
+            reward_stamp = index in (4, 9)
+            content = gift_icon if reward_stamp else ("✓" if earned else "")
+            classes = "stamp earned" if earned else "stamp"
+            if reward_stamp:
+                classes += " gift-stamp"
+            circles.append(
+                f'<span class="{classes}" aria-label="'
+                f'{"Earned" if earned else "Not yet earned"} stamp'
+                f'{" and prize draw" if reward_stamp else ""}">{content}</span>'
+            )
         reward_message = (
-            "<p class=\"ready\">Reward ready!</p>"
-            if reward_ready
-            else "<p>Collect 10 stamps to earn your reward.</p>"
+            '<p class="prize">Prize draw earned!</p>'
+            if filled >= 5
+            else ""
+        )
+        valid_until = settings.loyalty_valid_until
+        validity_message = ""
+        if valid_until:
+            safe_valid_until = html.escape(valid_until)
+            expired = date.fromisoformat(valid_until) < date.today()
+            validity_message = (
+                f'<p class="validity{" expired" if expired else ""}">'
+                f'{"Card expired" if expired else "Valid until: " + safe_valid_until}'
+                "</p>"
+            )
+        safe_count = html.escape(f"{filled} of 10")
+        contact_line = (
+            f'<p class="contact">Facebook: {safe_facebook} '
+            f'&nbsp;|&nbsp; Phone: {safe_phone}</p>'
         )
         page = f"""<!doctype html>
 <html lang="en">
@@ -282,26 +325,32 @@ class LoyaltyWebServer:
 <title>{safe_salon_name} - Loyalty Card</title>
 <style>
 * {{ box-sizing: border-box; }}
-body {{ margin: 0; padding: 20px; background: #fff7f8; color: #49343d; font-family: Arial, sans-serif; }}
-main {{ max-width: 420px; margin: 0 auto; padding: 24px 20px; background: #fff; border-radius: 20px; box-shadow: 0 8px 30px #6c40521a; text-align: center; }}
-img {{ width: 84px; height: 84px; object-fit: cover; border-radius: 50%; }}
-h1 {{ margin: 12px 0 4px; font-size: 1.4rem; }}
-h2 {{ margin: 14px 0 6px; font-size: 1.2rem; }}
-.grid {{ display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px 8px; margin: 20px auto; max-width: 330px; }}
-.stamp {{ display: block; width: 42px; height: 42px; border: 3px solid #d8c5cf; border-radius: 50%; margin: auto; }}
-.stamp.filled {{ background: #c8799d; border-color: #c8799d; }}
-.count {{ font-size: 1.25rem; font-weight: 700; }}
-.reward {{ color: #705362; }}
-.ready {{ color: #24754b; font-weight: 700; font-size: 1.2rem; }}
+body {{ margin: 0; padding: 16px; background: #fff7f8; color: #49343d; font-family: Arial, sans-serif; }}
+main {{ width: 100%; max-width: 390px; margin: 0 auto; padding: 20px 16px; background: #fff; border-radius: 20px; box-shadow: 0 8px 30px #6c40521a; text-align: center; }}
+img {{ width: 76px; height: 76px; object-fit: cover; border-radius: 50%; }}
+h1 {{ margin: 10px 0 3px; font-size: 1.75rem; line-height: 1.15; font-weight: 700; }}
+.contact {{ margin: 4px 0 18px; font-size: .9rem; line-height: 1.4; overflow-wrap: anywhere; }}
+.grid {{ display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px 6px; margin: 18px auto 12px; max-width: 330px; }}
+.stamp {{ display: flex; align-items: center; justify-content: center; width: 46px; height: 46px; border: 3px dotted #d8c5cf; border-radius: 50%; margin: auto; color: #fff; font-size: 1.5rem; font-weight: 700; }}
+.stamp.earned {{ background: #c8799d; border: 3px solid #c8799d; }}
+.stamp.gift-stamp {{ color: #c9c9c9; }}
+.stamp.gift-stamp.earned {{ color: #ffe28a; }}
+.gift {{ width: 25px; height: 25px; }}
+.count {{ margin: 8px 0; font-size: 1.25rem; font-weight: 700; }}
+.prize {{ margin: 8px 0; color: #24754b; font-weight: 700; }}
+.name, .validity {{ margin: 12px 0 0; }}
+.expired {{ color: #b42332; font-weight: 700; }}
 </style>
 </head>
 <body><main>
 <img src="{safe_logo_data}" alt="{safe_salon_name} logo">
-<h1>{safe_salon_name}</h1>
-<h2>{first_name}'s Loyalty Card</h2>
-<div class="grid" aria-label="Ten loyalty stamps">{circles}</div>
-<p class="count">{filled} of 10</p>
-<div class="reward">{reward_message}</div>
+<h1>LOYALTY CARD</h1>
+{contact_line}
+<div class="grid" aria-label="Ten loyalty stamps">{''.join(circles)}</div>
+<p class="count">{safe_count}</p>
+{reward_message}
+<p class="name"><strong>Name:</strong> {first_name}</p>
+{validity_message}
 </main></body></html>"""
         return page
 

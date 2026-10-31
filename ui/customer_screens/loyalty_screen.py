@@ -8,6 +8,7 @@ from PyQt6.QtWidgets import (
 )
 
 from services.loyalty_manager import LoyaltyManager
+from services.studio_settings_manager import StudioSettingsManager
 from ui.base_page import BasePage
 from ui.branding import brand_circular_pixmap
 
@@ -15,9 +16,21 @@ from ui.branding import brand_circular_pixmap
 class LoyaltyScreen(BasePage):
     """Explain the phone-based loyalty card to customers."""
 
-    def __init__(self, loyalty_manager: LoyaltyManager, parent=None) -> None:
+    def __init__(
+        self,
+        loyalty_manager: LoyaltyManager,
+        parent=None,
+        settings_manager: StudioSettingsManager | None = None,
+    ) -> None:
         self._loyalty_manager = loyalty_manager
-        super().__init__({"loyalty_manager": loyalty_manager}, parent)
+        self._settings_manager = settings_manager
+        super().__init__(
+            {
+                "loyalty_manager": loyalty_manager,
+                "studio_settings_manager": settings_manager,
+            },
+            parent,
+        )
 
     @property
     def loyalty_manager(self) -> LoyaltyManager:
@@ -49,9 +62,27 @@ class LoyaltyScreen(BasePage):
         card_layout.addWidget(title)
         card_layout.addLayout(self._steps_layout)
 
+        self._terms_card = QFrame()
+        self._terms_card.setProperty("card", True)
+        terms_layout = QVBoxLayout(self._terms_card)
+        terms_layout.setContentsMargins(16, 16, 16, 16)
+        terms_layout.setSpacing(8)
+        terms_title = QLabel("Terms & Conditions")
+        terms_title.setStyleSheet(
+            "color: #8A5A6A; font-size: 16px; font-weight: 700;"
+        )
+        terms_layout.addWidget(terms_title)
+        self._terms_items_layout = QVBoxLayout()
+        self._terms_items_layout.setSpacing(6)
+        terms_layout.addLayout(self._terms_items_layout)
+        self._valid_until_label = QLabel()
+        self._valid_until_label.setWordWrap(True)
+        terms_layout.addWidget(self._valid_until_label)
+
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 12, 12, 12)
         layout.addWidget(card, 0, Qt.AlignmentFlag.AlignTop)
+        layout.addWidget(self._terms_card, 0, Qt.AlignmentFlag.AlignTop)
         layout.addStretch(1)
 
     def refresh(self) -> None:
@@ -92,3 +123,32 @@ class LoyaltyScreen(BasePage):
             row.addWidget(text, 1)
             self._steps_layout.addWidget(row_widget)
             self._step_labels.append(text)
+
+        settings = (
+            self._settings_manager.get_settings()
+            if self._settings_manager is not None
+            else None
+        )
+        while self._terms_items_layout.count():
+            item = self._terms_items_layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+        if settings is None:
+            self._terms_card.setVisible(False)
+            return
+
+        self._terms_card.setVisible(True)
+        for term in settings.loyalty_terms.splitlines():
+            if not term.strip():
+                continue
+            bullet = QLabel(f"• {term.strip()}")
+            bullet.setTextFormat(Qt.TextFormat.PlainText)
+            bullet.setWordWrap(True)
+            bullet.setMinimumWidth(0)
+            bullet.setStyleSheet("color: #3f3437;")
+            self._terms_items_layout.addWidget(bullet)
+        valid_until = settings.loyalty_valid_until
+        self._valid_until_label.setText(
+            f"Valid until: {valid_until}" if valid_until else ""
+        )

@@ -29,6 +29,10 @@ class StudioSettingsManager:
         map_latitude: str | int | float | None = None,
         map_longitude: str | int | float | None = None,
         map_image_path: str | None = None,
+        loyalty_facebook: str | None = None,
+        loyalty_phone: str | None = None,
+        loyalty_valid_until: str | None = None,
+        loyalty_terms: str | None = None,
     ) -> StudioSettings:
         current = self.get_settings()
         settings = StudioSettings(
@@ -46,6 +50,18 @@ class StudioSettingsManager:
             current.map_latitude if map_latitude is None else map_latitude,
             current.map_longitude if map_longitude is None else map_longitude,
             current.map_image_path if map_image_path is None else map_image_path,
+            (
+                current.loyalty_facebook
+                if loyalty_facebook is None
+                else loyalty_facebook
+            ),
+            current.loyalty_phone if loyalty_phone is None else loyalty_phone,
+            (
+                current.loyalty_valid_until
+                if loyalty_valid_until is None
+                else loyalty_valid_until
+            ),
+            current.loyalty_terms if loyalty_terms is None else loyalty_terms,
         )
         self._database.update_studio_settings(settings)
         return settings
