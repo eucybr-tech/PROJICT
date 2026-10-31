@@ -15,8 +15,15 @@ from PyQt6.QtCore import (
     QUrl,
     pyqtSignal,
 )
-from PyQt6.QtGui import QColor, QPixmap, QTextCharFormat, QDesktopServices
+from PyQt6.QtGui import (
+    QColor,
+    QDesktopServices,
+    QPixmap,
+    QShowEvent,
+    QTextCharFormat,
+)
 from PyQt6.QtWidgets import (
+    QApplication,
     QCalendarWidget,
     QCheckBox,
     QComboBox,
@@ -25,6 +32,7 @@ from PyQt6.QtWidgets import (
     QDialogButtonBox,
     QDoubleSpinBox,
     QFormLayout,
+    QGraphicsOpacityEffect,
     QHeaderView,
     QHBoxLayout,
     QLabel,
@@ -35,6 +43,7 @@ from PyQt6.QtWidgets import (
     QListWidgetItem,
     QMessageBox,
     QPushButton,
+    QSizePolicy,
     QStackedWidget,
     QTableWidget,
     QTableWidgetItem,
@@ -296,39 +305,105 @@ class AppointmentDetailsDialog(ScrollableDialog):
         self.set_dialog_layout(content, footer)
 
 
-class StampQrDialog(ScrollableDialog):
+class StampQrDialog(QDialog):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setWindowTitle("Show stamp QR")
-        self.setMinimumWidth(400)
+        self.setMinimumSize(420, 560)
+        self.resize(460, 600)
+        self.setSizeGripEnabled(True)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(8)
+
         self.image_label = QLabel()
+        self.image_label.setFixedSize(300, 300)
         self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.image_label.setStyleSheet(
+            "background-color: white; border: 1px solid #d8d8d8;"
+        )
+        layout.addWidget(self.image_label, alignment=Qt.AlignmentFlag.AlignHCenter)
+
         self.link_label = QLabel()
         self.link_label.setTextInteractionFlags(
             Qt.TextInteractionFlag.TextSelectableByMouse
         )
         self.link_label.setWordWrap(True)
+        self.link_label.setMinimumWidth(0)
+        self.link_label.setSizePolicy(
+            QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred
+        )
+        self.copy_button = QPushButton("Copy link")
+        self.copy_button.setEnabled(False)
+        self.copy_button.clicked.connect(self._copy_link)
+        link_row = QHBoxLayout()
+        link_row.addWidget(self.link_label, 1)
+        link_row.addWidget(self.copy_button)
+        layout.addLayout(link_row)
+
+        self.countdown_label = QLabel()
+        self.countdown_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self.countdown_label)
+
         self.note_label = QLabel(
             "Customer scans with their phone camera. Phone must be on the same Wi-Fi."
         )
         self.note_label.setWordWrap(True)
-        self.countdown_label = QLabel()
-        self.countdown_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self.note_label)
+
         self.generate_button = QPushButton("Generate new QR")
-        self.generate_button.hide()
         self.close_buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
         self.close_buttons.rejected.connect(self.reject)
-
-        content = QVBoxLayout()
-        content.addWidget(self.image_label)
-        content.addWidget(self.link_label)
-        content.addWidget(self.countdown_label)
-        content.addWidget(self.note_label)
         footer = QHBoxLayout()
         footer.addWidget(self.generate_button)
         footer.addStretch()
         footer.addWidget(self.close_buttons)
-        self.set_dialog_layout(content, footer)
+        layout.addLayout(footer)
+        self._center_on_screen()
+
+    def _available_geometry(self) -> QRect | None:
+        screen = self.screen()
+        if screen is None and self.parentWidget() is not None:
+            screen = self.parentWidget().screen()
+        if screen is None:
+            screen = QApplication.primaryScreen()
+        return screen.availableGeometry() if screen is not None else None
+
+    def _center_on_screen(self) -> None:
+        available = self._available_geometry()
+        if available is None:
+            return
+        frame = self.frameGeometry()
+        frame.moveCenter(available.center())
+        self.move(frame.topLeft())
+
+    def showEvent(self, event: QShowEvent) -> None:
+        super().showEvent(event)
+        self._center_on_screen()
+
+    def set_qr(self, pixmap: QPixmap, link: str) -> None:
+        self.image_label.setGraphicsEffect(None)
+        self.image_label.setPixmap(
+            pixmap.scaled(
+                self.image_label.size(),
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.FastTransformation,
+            )
+        )
+        self.link_label.setText(link)
+        self.copy_button.setEnabled(bool(link))
+
+    def expire_qr(self) -> None:
+        opacity = QGraphicsOpacityEffect(self.image_label)
+        opacity.setOpacity(0.35)
+        self.image_label.setGraphicsEffect(opacity)
+        self.countdown_label.setText("QR expired")
+
+    def _copy_link(self) -> None:
+        link = self.link_label.text()
+        if link:
+            QApplication.clipboard().setText(link)
 
 
 class EmailResultSignals(QObject):
@@ -1788,8 +1863,6 @@ class AppointmentPanel(QWidget):
             return
 
         dialog = StampQrDialog(self)
-        image_label = dialog.image_label
-        link_label = dialog.link_label
         countdown = dialog.countdown_label
         generate_button = dialog.generate_button
         countdown_timer = QTimer(dialog)
@@ -1818,10 +1891,7 @@ class AppointmentPanel(QWidget):
                 remaining_seconds -= 1
                 if remaining_seconds <= 0:
                     countdown_timer.stop()
-                    countdown.setText("QR expired")
-                    image_label.clear()
-                    link_label.clear()
-                    generate_button.show()
+                    dialog.expire_qr()
                     return
                 if not show_countdown():
                     return
@@ -1843,7 +1913,10 @@ class AppointmentPanel(QWidget):
                 link = server.build_url(f"/stamp/{token}")
                 import qrcode
 
-                image = qrcode.make(link)
+                qr_code = qrcode.QRCode(box_size=10, border=4)
+                qr_code.add_data(link)
+                qr_code.make(fit=True)
+                image = qr_code.make_image(fill_color="black", back_color="white")
                 image_bytes = BytesIO()
                 image.save(image_bytes, format="PNG")
                 qr_pixmap = QPixmap()
@@ -1853,19 +1926,10 @@ class AppointmentPanel(QWidget):
                 show_error(error)
                 return False
             try:
-                image_label.setPixmap(
-                    qr_pixmap.scaled(
-                        340,
-                        340,
-                        Qt.AspectRatioMode.KeepAspectRatio,
-                        Qt.TransformationMode.SmoothTransformation,
-                    )
-                )
-                link_label.setText(link)
+                dialog.set_qr(qr_pixmap, link)
                 remaining_seconds = 120
                 if not show_countdown():
                     return False
-                generate_button.hide()
                 countdown_timer.start(1000)
             except Exception as error:
                 show_error(error)

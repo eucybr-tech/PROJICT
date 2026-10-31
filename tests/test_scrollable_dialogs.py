@@ -1,14 +1,23 @@
 import os
 import unittest
 from datetime import datetime
+from io import BytesIO
 from pathlib import Path
 from unittest.mock import patch
+
+import qrcode
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PyQt6.QtCore import QPoint, QPointF, QRect, Qt
-from PyQt6.QtGui import QWheelEvent
-from PyQt6.QtWidgets import QApplication, QDoubleSpinBox, QPushButton
+from PyQt6.QtGui import QPixmap, QWheelEvent
+from PyQt6.QtWidgets import (
+    QApplication,
+    QDialogButtonBox,
+    QDoubleSpinBox,
+    QPushButton,
+    QScrollArea,
+)
 
 from models import (
     Admin,
@@ -99,7 +108,6 @@ class ScrollableDialogScreenChecks(unittest.TestCase):
                 Path("missing.jpg"),
             ),
             lambda: AppointmentDetailsDialog("Appointment details " * 80),
-            lambda: StampQrDialog(),
             lambda: StampReversalDialog(),
         )
 
@@ -148,6 +156,72 @@ class ScrollableDialogScreenChecks(unittest.TestCase):
                 finally:
                     dialog.close()
                     self.application.processEvents()
+
+    def test_stamp_qr_dialog_fits_without_scrolling(self) -> None:
+        available = QRect(0, 0, 1366, 768)
+        dialog = StampQrDialog()
+        link = "https://example.test/stamp/offscreen-temporary"
+        qr_image = qrcode.make(link)
+        qr_bytes = BytesIO()
+        qr_image.save(qr_bytes, format="PNG")
+        qr_pixmap = QPixmap()
+        self.assertTrue(qr_pixmap.loadFromData(qr_bytes.getvalue(), "PNG"))
+        dialog.set_qr(qr_pixmap, link)
+        dialog.countdown_label.setText("QR expires in 2:00")
+        with patch.object(dialog, "_available_geometry", return_value=available):
+            dialog.show()
+            self.application.processEvents()
+        try:
+            print(
+                f"QR label size: {dialog.image_label.width()}x"
+                f"{dialog.image_label.height()}"
+            )
+            self.assertEqual(dialog.image_label.size().width(), 300)
+            self.assertEqual(dialog.image_label.size().height(), 300)
+            self.assertEqual(dialog.image_label.pixmap().size().width(), 300)
+            self.assertEqual(dialog.image_label.pixmap().size().height(), 300)
+            self.assertEqual(dialog.minimumWidth(), 420)
+            self.assertEqual(dialog.minimumHeight(), 560)
+            self.assertTrue(dialog.isSizeGripEnabled())
+            self.assertEqual(dialog.frameGeometry().center(), available.center())
+            self.assertFalse(dialog.findChildren(QScrollArea))
+            close_button = dialog.close_buttons.button(
+                QDialogButtonBox.StandardButton.Close
+            )
+            self.assertIsNotNone(close_button)
+            visible_widgets = (
+                dialog.image_label,
+                dialog.link_label,
+                dialog.copy_button,
+                dialog.countdown_label,
+                dialog.note_label,
+                dialog.generate_button,
+                dialog.close_buttons,
+                close_button,
+            )
+            for widget in visible_widgets:
+                with self.subTest(widget=widget):
+                    self.assertTrue(widget.isVisible())
+                    bounds = QRect(
+                        widget.mapToGlobal(widget.rect().topLeft()),
+                        widget.size(),
+                    )
+                    self.assertTrue(available.contains(bounds))
+            self.assertTrue(dialog.link_label.wordWrap())
+            self.assertTrue(
+                dialog.link_label.textInteractionFlags()
+                & Qt.TextInteractionFlag.TextSelectableByMouse
+            )
+            self.assertEqual(dialog.link_label.text(), link)
+            dialog.copy_button.click()
+            self.assertEqual(QApplication.clipboard().text(), link)
+            dialog.expire_qr()
+            self.assertEqual(dialog.countdown_label.text(), "QR expired")
+            self.assertEqual(dialog.image_label.graphicsEffect().opacity(), 0.35)
+            self.assertTrue(dialog.generate_button.isVisible())
+        finally:
+            dialog.close()
+            self.application.processEvents()
 
     def test_wheel_over_unfocused_combo_and_spin_does_not_change_values(self) -> None:
         services = [
