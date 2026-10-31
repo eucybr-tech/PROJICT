@@ -3,6 +3,7 @@ import tempfile
 import unittest
 from datetime import date, datetime
 from pathlib import Path
+from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -123,18 +124,19 @@ class AppointmentDatetimeFlowChecks(unittest.TestCase):
             service_address,
             travel_fee,
         ) = dialog.get_appointment_values()
-        self.appointments.create_appointment(
-            email,
-            service_id,
-            nail_length,
-            add_ons,
-            appointment_start,
-            duration_minutes,
-            visit_type=visit_type,
-            service_address=service_address,
-            travel_fee=travel_fee,
-            selected_extra_names=selected_extras,
-        )
+        with patch.object(NotificationService, "send_booking_received"):
+            self.appointments.create_appointment(
+                email,
+                service_id,
+                nail_length,
+                add_ons,
+                appointment_start,
+                duration_minutes,
+                visit_type=visit_type,
+                service_address=service_address,
+                travel_fee=travel_fee,
+                selected_extra_names=selected_extras,
+            )
         appointments = self.database.get_appointments()
         self.assertEqual(len(appointments), 1)
         saved = appointments[0]

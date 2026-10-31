@@ -1,9 +1,14 @@
+import logging
 import sys
 import traceback
 from pathlib import Path
 from types import TracebackType
 
-from PyQt6.QtCore import Qt
+from dotenv import load_dotenv
+
+load_dotenv(Path(__file__).parent / ".env")
+
+from PyQt6.QtCore import QTimer, Qt
 from PyQt6.QtWidgets import (
     QApplication,
     QButtonGroup,
@@ -57,6 +62,7 @@ from ui.loyalty_scan_screen import LoyaltyScanScreen
 
 
 ERROR_LOG_PATH = Path(__file__).resolve().parent / "data" / "application_errors.log"
+_LOGGER = logging.getLogger(__name__)
 
 
 def _handle_uncaught_exception(
@@ -571,6 +577,18 @@ def main() -> int:
         schedule_manager=schedule_manager,
     )
     queue_manager = QueueManager(database, appointment_manager)
+    reminder_timer = QTimer(app)
+    reminder_timer.setInterval(60 * 60 * 1000)
+
+    def check_appointment_reminders() -> None:
+        try:
+            appointment_manager.send_due_reminders()
+        except Exception:
+            _LOGGER.exception("Appointment reminder check failed")
+
+    reminder_timer.timeout.connect(check_appointment_reminders)
+    check_appointment_reminders()
+    reminder_timer.start()
 
     stylesheet_path = Path(__file__).resolve().parent / "styles" / "salon.qss"
     try:

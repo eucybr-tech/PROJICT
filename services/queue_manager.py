@@ -43,6 +43,8 @@ class QueueManager:
         if appointment.status is not AppointmentStatus.CONFIRMED:
             raise ValueError("Only confirmed appointments can join the queue")
         appointment_time = self._as_datetime(appointment.appointment_time)
+        if appointment_time.date() != date.today():
+            raise ValueError("Appointments can only join the queue on their appointment day")
         entry = self._database.get_queue_entry_by_appointment(appointment_id)
         if entry is None:
             entry = QueueEntry(
@@ -78,12 +80,23 @@ class QueueManager:
         appointment = self._appointment_manager.get_appointment(appointment_id)
         entry = self._database.get_queue_entry_by_appointment(appointment_id)
         if entry is None:
-            if appointment.status is AppointmentStatus.CONFIRMED:
+            if (
+                appointment.status is AppointmentStatus.CONFIRMED
+                and self._as_datetime(appointment.appointment_time).date()
+                == date.today()
+            ):
                 self.enroll_booked(appointment_id)
             return
 
         if appointment.status is AppointmentStatus.CONFIRMED:
             appointment_time = self._as_datetime(appointment.appointment_time)
+            if appointment_time.date() != date.today():
+                changed = entry.status is not QueueStatus.CANCELLED
+                entry.update_status(QueueStatus.CANCELLED)
+                self._clear_skips_after(entry)
+                if changed:
+                    self._database.update_queue_entry(entry)
+                return
             changed = (
                 entry.queue_date != appointment_time.date()
                 or entry.sort_time != appointment_time
@@ -109,11 +122,14 @@ class QueueManager:
             self._database.update_queue_entry(entry)
 
     def get_queue(self, queue_date: date | None = None) -> list[QueueEntry]:
-        return self._get_active_entries(queue_date or date.today())
+        requested_date = queue_date or date.today()
+        if requested_date != date.today():
+            return []
+        return self._get_active_entries(requested_date)
 
     def get_position(self, entry_id: int) -> int | None:
         entry = self._database.get_queue_entry(entry_id)
-        if entry is None:
+        if entry is None or entry.queue_date != date.today():
             return None
         active = self._get_active_entries(entry.queue_date)
         return next(
@@ -204,29 +220,26 @@ class QueueManager:
         query = ticket_or_email.strip().casefold()
         if not query:
             return None
-        today = date.today()
         matches = [
-            entry
-            for entry in self._database.get_all_queue_entries()
+            entry for entry in self._get_active_entries(date.today())
             if entry.status in (QueueStatus.WAITING, QueueStatus.SERVING)
             and (
                 (entry.ticket_number or "").casefold() == query
                 or (entry.client_email or "").casefold() == query
             )
         ]
-        return min(
-            matches,
-            key=lambda entry: (
-                0 if entry.queue_date == today else 1 if entry.queue_date > today else 2,
-                abs((entry.queue_date - today).days),
-                entry.queue_date,
-                entry.sort_time,
-                entry.entry_id or 0,
-            ),
-            default=None,
-        )
+        return matches[0] if matches else None
 
     def _get_active_entries(self, queue_date: date) -> list[QueueEntry]:
+        if queue_date != date.today():
+            return []
+        for appointment in self._appointment_manager.get_appointments_for_date(
+            queue_date
+        ):
+            if appointment.status is AppointmentStatus.CONFIRMED:
+                appointment_id = appointment.appointment_id
+                if appointment_id is not None:
+                    self.enroll_booked(appointment_id)
         active = [
             entry
             for entry in self._database.get_queue_entries(queue_date)

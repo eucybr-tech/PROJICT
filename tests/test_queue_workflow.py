@@ -36,6 +36,30 @@ class MockNotificationService(NotificationService):
     def __init__(self) -> None:
         self.appointment_emails: list[tuple[str, str]] = []
         self.queue_emails: list[str] = []
+        self.booking_emails: list[tuple[str, str, str, datetime]] = []
+        self.reminder_emails: list[tuple[str, str, str, datetime]] = []
+        self.thank_you_emails: list[tuple[str, str, str, datetime]] = []
+
+    def send_booking_received(
+        self, email: str, first_name: str, service_name: str, appointment_time: datetime
+    ) -> None:
+        self.booking_emails.append(
+            (email, first_name, service_name, appointment_time)
+        )
+
+    def send_appointment_reminder(
+        self, email: str, first_name: str, service_name: str, appointment_time: datetime
+    ) -> None:
+        self.reminder_emails.append(
+            (email, first_name, service_name, appointment_time)
+        )
+
+    def send_appointment_thank_you(
+        self, email: str, first_name: str, service_name: str, appointment_time: datetime
+    ) -> None:
+        self.thank_you_emails.append(
+            (email, first_name, service_name, appointment_time)
+        )
 
     def send_appointment_status_async(
         self, email: str, appointment_summary: str, callback: EmailCallback
@@ -106,14 +130,11 @@ class QueueWorkflowChecks(unittest.TestCase):
         self.assertEqual(self.queue.get_position(late_entry_id), 2)
         duplicate_enrollment = self.queue.enroll_booked(late_id)
         self.assertEqual(self._queue_entry_id(duplicate_enrollment), late_entry_id)
-        self.assertIn(
-            "is 001 right now (appointment at 11:00 AM)",
-            self.notifications.appointment_emails[0][1],
-        )
-        self.assertIn(
-            "is 001 right now (appointment at 09:00 AM)",
-            self.notifications.appointment_emails[1][1],
-        )
+        self.assertIn("Time: 11:00 AM", self.notifications.appointment_emails[0][1])
+        self.assertIn("Time: 09:00 AM", self.notifications.appointment_emails[1][1])
+        for _recipient, body in self.notifications.appointment_emails:
+            self.assertNotIn("total", body.lower())
+            self.assertNotIn("@", body)
 
         serving = self.queue.call_next()
         self.assertEqual(serving.appointment_id, early_id)
@@ -164,35 +185,24 @@ class QueueWorkflowChecks(unittest.TestCase):
             allow_outside_schedule=True,
         )
         self.assertEqual(self.queue.get_queue(today), [])
+        self.assertEqual(self.queue.get_queue(next_date), [])
         rescheduled = self.database.get_queue_entry_by_appointment(late_id)
         if rescheduled is None:
-            raise AssertionError("The rescheduled appointment must retain its entry")
-        self.assertEqual(rescheduled.queue_date, next_date)
+            raise AssertionError("The queue history entry should remain persisted")
+        self.assertEqual(rescheduled.status.value, "CANCELLED")
         rescheduled_id = self._queue_entry_id(rescheduled)
-        self.assertEqual(self.queue.get_position(rescheduled_id), 1)
+        self.assertIsNone(self.queue.get_position(rescheduled_id))
         self.assertIsNone(self.queue.get_position(early_entry_id))
         self.assertEqual(self.notifications.queue_emails, [self.email])
         found_entry = self.queue.find_entry(self.email)
-        self.assertIsNotNone(found_entry)
-        if found_entry is None:
-            raise AssertionError("The customer email should find the active entry")
-        self.assertEqual(found_entry.entry_id, rescheduled.entry_id)
+        self.assertIsNone(found_entry)
 
         screen = QueueScreen(self.queue)
         self.assertEqual(screen._refresh_timer.interval(), 10_000)
         self.assertEqual(screen._short_name("Queue Check"), "Queue C.")
         screen._lookup_box.setText(self.email)
         screen._find_my_position()
-        self.assertTrue(
-            screen._position_label.text().startswith(
-                f"Your queue number is 001 for {next_date:%A, %B %d, %Y}"
-            )
-        )
-        self.assertTrue(screen._position_label.text().endswith("0 ahead of you"))
-        self.assertEqual(
-            screen._ticket_label.text(),
-            f"Ticket: {rescheduled.ticket_number or ''}",
-        )
+        self.assertIn("today's active line", screen._position_label.text())
         panel = QueuePanel(self.queue)
         button_labels = {
             button.text()

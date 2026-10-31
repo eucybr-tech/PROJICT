@@ -106,6 +106,9 @@ class Database:
                     visit_type IN ('STUDIO', 'HOME_SERVICE')
                 ),
                 service_address TEXT NOT NULL DEFAULT '',
+                booking_email_sent_at TEXT,
+                reminder_sent_at TEXT,
+                thank_you_sent_at TEXT,
                 FOREIGN KEY (client_email) REFERENCES clients(email),
                 FOREIGN KEY (service_id) REFERENCES services(service_id)
             );
@@ -372,6 +375,9 @@ Loyalty cards are valid only until expiry date'
                 "visit_type": "TEXT NOT NULL DEFAULT 'STUDIO'",
                 "service_address": "TEXT NOT NULL DEFAULT ''",
                 "selected_extras": "TEXT NOT NULL DEFAULT '{}'",
+                "booking_email_sent_at": "TEXT",
+                "reminder_sent_at": "TEXT",
+                "thank_you_sent_at": "TEXT",
             },
             "studio_settings": {
                 "allowed_areas": "TEXT NOT NULL DEFAULT '[\"Pila\"]'",
@@ -808,6 +814,72 @@ Loyalty cards are valid only until expiry date'
         ).fetchall()
         return [self._appointment_from_row(row) for row in rows]
 
+    def get_due_appointment_reminders(
+        self, appointment_date: date
+    ) -> list[dict[str, str | int]]:
+        rows = self._connection.execute(
+            """
+            SELECT a.appointment_id, a.client_email, c.name AS client_name,
+                   s.name AS service_name, a.appointment_time
+            FROM appointments AS a
+            JOIN clients AS c ON c.email = a.client_email
+            JOIN services AS s ON s.service_id = a.service_id
+            WHERE date(a.appointment_time) = ?
+              AND a.status IN ('PENDING', 'CONFIRMED')
+              AND a.reminder_sent_at IS NULL
+              AND TRIM(c.email) <> ''
+            ORDER BY a.appointment_time, a.appointment_id
+            """,
+            (appointment_date.isoformat(),),
+        ).fetchall()
+        return [
+            {
+                "appointment_id": int(row["appointment_id"]),
+                "client_email": str(row["client_email"]),
+                "client_name": str(row["client_name"]),
+                "service_name": str(row["service_name"]),
+                "appointment_time": str(row["appointment_time"]),
+            }
+            for row in rows
+        ]
+
+    def get_appointment_email_sent_at(
+        self, appointment_id: int, email_type: str
+    ) -> str | None:
+        column = self._appointment_email_column(email_type)
+        row = self._connection.execute(
+            f"SELECT {column} FROM appointments WHERE appointment_id = ?",
+            (appointment_id,),
+        ).fetchone()
+        return str(row[column]) if row is not None and row[column] else None
+
+    def mark_appointment_email_sent(
+        self, appointment_id: int, email_type: str, sent_at: datetime
+    ) -> bool:
+        column = self._appointment_email_column(email_type)
+        with self._connection:
+            cursor = self._connection.execute(
+                f"""
+                UPDATE appointments
+                SET {column} = ?
+                WHERE appointment_id = ? AND {column} IS NULL
+                """,
+                (sent_at.isoformat(), appointment_id),
+            )
+        return cursor.rowcount == 1
+
+    @staticmethod
+    def _appointment_email_column(email_type: str) -> str:
+        columns = {
+            "booking": "booking_email_sent_at",
+            "reminder": "reminder_sent_at",
+            "thank_you": "thank_you_sent_at",
+        }
+        try:
+            return columns[email_type]
+        except KeyError as error:
+            raise ValueError(f"Unknown appointment email type: {email_type}") from error
+
     def get_report_appointments(
         self, start_date: date, end_date: date
     ) -> list[dict[str, object]]:
@@ -928,6 +1000,7 @@ Loyalty cards are valid only until expiry date'
     def update_appointment(self, appointment: Appointment) -> None:
         if appointment.appointment_id is None:
             raise ValueError("appointment.appointment_id is required to update an appointment")
+        serialized_time = self._serialize_time(appointment.appointment_time)
         with self._connection:
             cursor = self._connection.execute(
                 """
@@ -937,13 +1010,17 @@ Loyalty cards are valid only until expiry date'
                     selected_extras = ?,
                     duration_minutes = ?, cancellation_fee = ?, allergies = ?,
                     travel_fee = ?, discount = ?, amount_paid = ?, payment_note = ?
-                    , visit_type = ?, service_address = ?
+                    , visit_type = ?, service_address = ?,
+                    reminder_sent_at = CASE
+                        WHEN appointment_time != ? THEN NULL
+                        ELSE reminder_sent_at
+                    END
                 WHERE appointment_id = ?
                 """,
                 (
                     appointment.client_email,
                     appointment.service_id,
-                    self._serialize_time(appointment.appointment_time),
+                    serialized_time,
                     appointment.status.value,
                     appointment.notes,
                     appointment.nail_length,
@@ -959,6 +1036,7 @@ Loyalty cards are valid only until expiry date'
                     appointment.payment_note,
                     appointment.visit_type.value,
                     appointment.service_address,
+                    serialized_time,
                     appointment.appointment_id,
                 ),
             )

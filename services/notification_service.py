@@ -1,6 +1,7 @@
 import os
 import smtplib
 import threading
+from datetime import datetime
 from email.message import EmailMessage
 from email.utils import formataddr
 from typing import Callable
@@ -11,6 +12,57 @@ EmailCallback = Callable[[bool, str | None], None]
 
 class NotificationService:
     """Sends appointment and queue emails using SMTP settings from the environment."""
+
+    _STUDIO_NAME = "Pearl's Signature"
+
+    def send_booking_received(
+        self,
+        email: str,
+        first_name: str,
+        service_name: str,
+        appointment_time: datetime,
+    ) -> None:
+        self._send_message(
+            email,
+            "Booking received - Pearl's Signature",
+            f"Hi {first_name},\n\n"
+            "We received your booking for "
+            f"{service_name} on {appointment_time:%B %d, %Y} "
+            f"at {appointment_time:%I:%M %p}.\n\n"
+            f"{self._STUDIO_NAME}",
+        )
+
+    def send_appointment_reminder(
+        self,
+        email: str,
+        first_name: str,
+        service_name: str,
+        appointment_time: datetime,
+    ) -> None:
+        self._send_message(
+            email,
+            "Appointment reminder - Pearl's Signature",
+            f"Hi {first_name},\n\n"
+            f"You have an appointment tomorrow at {appointment_time:%I:%M %p} "
+            f"for {service_name} on {appointment_time:%B %d, %Y}.\n\n"
+            f"{self._STUDIO_NAME}",
+        )
+
+    def send_appointment_thank_you(
+        self,
+        email: str,
+        first_name: str,
+        service_name: str,
+        appointment_time: datetime,
+    ) -> None:
+        self._send_message(
+            email,
+            "Thank you for visiting - Pearl's Signature",
+            f"Hi {first_name},\n\n"
+            f"Thank you for visiting us for your {service_name} appointment "
+            f"on {appointment_time:%B %d, %Y} at {appointment_time:%I:%M %p}.\n\n"
+            f"{self._STUDIO_NAME}",
+        )
 
     def send_appointment_status(self, email: str, appointment_summary: str) -> None:
         self._send_message(

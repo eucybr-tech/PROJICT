@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+import sqlite3
 from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING
 
@@ -20,6 +22,8 @@ from services.loyalty_manager import LoyaltyManager
 from services.notification_service import EmailCallback, NotificationService
 from services.pricing_calculator import PricingCalculator
 from services.schedule_manager import ScheduleManager
+
+_LOGGER = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from services.queue_manager import QueueManager
@@ -202,7 +206,9 @@ class AppointmentManager:
         conflict = self._find_time_conflict(appointment)
         if conflict is not None:
             raise ValueError(self._conflict_message(conflict))
-        return self._database.add_appointment(appointment)
+        created = self._database.add_appointment(appointment)
+        self._send_booking_email(created)
+        return created
 
     def get_available_slots(
         self,
@@ -366,28 +372,16 @@ class AppointmentManager:
                     0 if waive_fee else self._studio_policy.cancellation_fee
                 )
         self._database.update_appointment(appointment)
-        queue_summary = ""
         if self._queue_manager is not None and appointment.appointment_id is not None:
             if status is AppointmentStatus.CONFIRMED:
-                entry = self._queue_manager.enroll_booked(appointment.appointment_id)
-                position = (
-                    self._queue_manager.get_position(entry.entry_id)
-                    if entry.entry_id is not None
-                    else None
-                )
-                if position is not None:
-                    appointment_time = self._as_datetime(appointment.appointment_time)
-                    queue_summary = (
-                        f"Your queue number for "
-                        f"{appointment_time:%A, %B %d, %Y} is {position:03d} right now "
-                        f"(appointment at {appointment_time:%I:%M %p}). "
-                        "It moves up as the clients before you finish, and may change if "
-                        "someone books an earlier time. You can check it in the Queue tab."
-                    )
+                if self._as_datetime(appointment.appointment_time).date() == date.today():
+                    self._queue_manager.enroll_booked(appointment.appointment_id)
             else:
                 self._queue_manager.sync_appointment(appointment.appointment_id)
         if status in (AppointmentStatus.CONFIRMED, AppointmentStatus.CANCELLED):
-            self._send_status_email(appointment, email_callback, queue_summary)
+            self._send_status_email(appointment, email_callback)
+        if status is AppointmentStatus.COMPLETED:
+            self._send_thank_you_email(appointment)
         return appointment
 
     def reschedule(
@@ -518,16 +512,113 @@ class AppointmentManager:
         self,
         appointment: Appointment,
         callback: EmailCallback,
-        additional_message: str = "",
     ) -> None:
-        summary = appointment.get_summary()
-        if additional_message:
-            summary = f"{summary}\n\n{additional_message}"
+        if not appointment.client_email.strip():
+            return
+        try:
+            client = self._database.get_client(appointment.client_email)
+            service = self._database.get_service(appointment.service_id)
+            if client is None or service is None:
+                raise RuntimeError("Appointment email details are unavailable")
+            appointment_time = self._as_datetime(appointment.appointment_time)
+            first_name = self._first_name(client.name)
+            summary = (
+                f"Hi {first_name},\n"
+                f"Service: {service.name}\n"
+                f"Date: {appointment_time:%B %d, %Y}\n"
+                f"Time: {appointment_time:%I:%M %p}\n"
+                "Pearl's Signature"
+            )
+        except (KeyError, RuntimeError, sqlite3.Error):
+            _LOGGER.exception(
+                "Could not prepare appointment status email for appointment %s",
+                appointment.appointment_id,
+            )
+            callback(False, "Appointment email details are unavailable")
+            return
         self._notification_service.send_appointment_status_async(
             appointment.client_email,
             summary,
             callback,
         )
+
+    def send_due_reminders(self, now: datetime | None = None) -> int:
+        current_time = now or datetime.now()
+        due_date = current_time.date() + timedelta(days=1)
+        sent_count = 0
+        try:
+            due_appointments = self._database.get_due_appointment_reminders(due_date)
+        except sqlite3.Error:
+            _LOGGER.exception("Could not check for due appointment reminders")
+            return 0
+
+        for details in due_appointments:
+            appointment_id = int(details["appointment_id"])
+            email = str(details["client_email"]).strip()
+            if not email:
+                continue
+            try:
+                self._notification_service.send_appointment_reminder(
+                    email,
+                    self._first_name(str(details["client_name"])),
+                    str(details["service_name"]),
+                    self._as_datetime(str(details["appointment_time"])),
+                )
+                if self._database.mark_appointment_email_sent(
+                    appointment_id, "reminder", current_time
+                ):
+                    sent_count += 1
+            except Exception:
+                _LOGGER.exception(
+                    "Could not send appointment reminder for appointment %s",
+                    appointment_id,
+                )
+        return sent_count
+
+    def _send_booking_email(self, appointment: Appointment) -> None:
+        self._send_one_time_email(appointment, "booking", "send_booking_received")
+
+    def _send_thank_you_email(self, appointment: Appointment) -> None:
+        self._send_one_time_email(
+            appointment, "thank_you", "send_appointment_thank_you"
+        )
+
+    def _send_one_time_email(
+        self, appointment: Appointment, email_type: str, sender_name: str
+    ) -> None:
+        appointment_id = appointment.appointment_id
+        if appointment_id is None or not appointment.client_email.strip():
+            return
+        try:
+            if self._database.get_appointment_email_sent_at(
+                appointment_id, email_type
+            ):
+                return
+            client = self._database.get_client(appointment.client_email)
+            service = self._database.get_service(appointment.service_id)
+            if client is None or service is None:
+                raise RuntimeError("Appointment email details are unavailable")
+            sender = getattr(self._notification_service, sender_name)
+            sender(
+                appointment.client_email,
+                self._first_name(client.name),
+                service.name,
+                self._as_datetime(appointment.appointment_time),
+            )
+            self._database.mark_appointment_email_sent(
+                appointment_id, email_type, datetime.now()
+            )
+        except Exception:
+            _LOGGER.exception(
+                "Could not send %s email for appointment %s",
+                email_type,
+                appointment_id,
+            )
+
+    @staticmethod
+    def _first_name(full_name: str) -> str:
+        parts = full_name.split(maxsplit=1)
+        return parts[0] if parts else "Customer"
 
     @staticmethod
     def _as_datetime(value: datetime | str) -> datetime:
