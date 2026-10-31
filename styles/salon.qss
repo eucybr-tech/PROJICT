@@ -1,0 +1,63 @@
+QWidget {
+    background-color: #FDF8F6;
+    color: #3f3437;
+    font-family: "Segoe UI", sans-serif;
+    font-size: 14px;
+}
+
+QLabel#appTitle {
+    color: #8A5A6A;
+    font-size: 26px;
+    font-weight: 700;
+}
+
+QLabel#subtitle {
+    color: #70525c;
+    font-size: 15px;
+}
+
+QPushButton {
+    background-color: #F4B4B8;
+    border: 1px solid #d9979d;
+    border-radius: 16px;
+    color: #553d4b;
+    font-weight: 600;
+    padding: 10px 18px;
+}
+
+QPushButton:hover {
+    background-color: #eba4aa;
+}
+
+QPushButton:pressed {
+    background-color: #df9299;
+}
+
+QLineEdit, QComboBox, QDateEdit, QDateTimeEdit, QSpinBox, QDoubleSpinBox,
+QTableWidget, QListWidget, QFrame[card="true"] {
+    background-color: #ffffff;
+    border: 1px solid #ead9d6;
+    border-radius: 12px;
+    padding: 8px;
+}
+
+QHeaderView::section {
+    background-color: #f8e5e3;
+    border: none;
+    color: #8A5A6A;
+    padding: 8px;
+}
+
+QTableWidget::item:selected, QListWidget::item:selected, QTabBar::tab:selected {
+    background-color: #F4B4B8;
+    color: #3f3437;
+}
+
+QTabBar::tab {
+    background-color: #f8e5e3;
+    color: #8A5A6A;
+    padding: 8px 14px;
+    border: 1px solid #ead9d6;
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+}

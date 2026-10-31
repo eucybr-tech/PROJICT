@@ -1,0 +1,6 @@
+PyQt6==6.11.*
+PyQt6-WebEngine==6.11.*
+qrcode
+Pillow
+# Optional camera QR scanning: pip install opencv-python
+# opencv-python
