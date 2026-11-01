@@ -53,6 +53,7 @@ class NotificationService:
         duration_minutes: int = 120,
         online_booking_url: str = "",
         map_link_url: str = "",
+        full_name: str = "",
     ) -> None:
         self._send_appointment_email(
             email,
@@ -71,6 +72,7 @@ class NotificationService:
             duration_minutes,
             online_booking_url,
             map_link_url=map_link_url,
+            full_name=full_name,
         )
 
     def send_appointment_reminder(
@@ -89,6 +91,7 @@ class NotificationService:
         online_booking_url: str = "",
         calendar_sequence: int = 0,
         map_link_url: str = "",
+        full_name: str = "",
     ) -> None:
         self._send_appointment_email(
             email,
@@ -109,6 +112,7 @@ class NotificationService:
             include_calendar=True,
             calendar_sequence=calendar_sequence,
             map_link_url=map_link_url,
+            full_name=full_name,
         )
 
     def send_appointment_thank_you(
@@ -126,6 +130,7 @@ class NotificationService:
         duration_minutes: int = 120,
         online_booking_url: str = "",
         map_link_url: str = "",
+        full_name: str = "",
     ) -> None:
         self._send_appointment_email(
             email,
@@ -144,6 +149,7 @@ class NotificationService:
             duration_minutes,
             online_booking_url,
             map_link_url=map_link_url,
+            full_name=full_name,
         )
 
     def send_appointment_status(
@@ -162,6 +168,7 @@ class NotificationService:
         duration_minutes: int = 120,
         online_booking_url: str = "",
         map_link_url: str = "",
+        full_name: str = "",
     ) -> None:
         try:
             subject, heading, body = self._APPOINTMENT_STATES[status]
@@ -185,6 +192,7 @@ class NotificationService:
             online_booking_url,
             include_calendar=status == "confirmed",
             map_link_url=map_link_url,
+            full_name=full_name,
         )
 
     def _send_appointment_email(
@@ -207,6 +215,7 @@ class NotificationService:
         include_calendar: bool = False,
         calendar_sequence: int = 0,
         map_link_url: str = "",
+        full_name: str = "",
     ) -> None:
         when = appointment_time.strftime("%A, %B %d, %Y at %I:%M %p")
         reference = f"PS-{appointment_id:06d}"
@@ -235,6 +244,7 @@ class NotificationService:
         text_content = self._appointment_text(
             heading,
             message,
+            full_name,
             first_name,
             when,
             service_name,
@@ -261,6 +271,7 @@ class NotificationService:
             facebook_page,
             review_url,
             online_booking_url,
+            full_name,
         )
         self._send_message(
             email,
@@ -276,6 +287,7 @@ class NotificationService:
         cls,
         heading: str,
         message: str,
+        full_name: str,
         first_name: str,
         when: str,
         service_name: str,
@@ -290,7 +302,7 @@ class NotificationService:
         lines = [
             heading,
             "",
-            f"Hi {first_name},",
+            f"Hi {cls._greeting_name(full_name, first_name)},",
             "",
             message,
             "",
@@ -332,6 +344,7 @@ class NotificationService:
         facebook_page: str,
         review_url: str,
         online_booking_url: str,
+        full_name: str = "",
     ) -> str:
         escape = lambda value: html.escape(value, quote=True)
         logo = (
@@ -393,6 +406,7 @@ class NotificationService:
             if provider_name.strip()
             else ""
         )
+        greeting_name = cls._greeting_name(full_name, first_name)
         return f"""<!doctype html>
 <html>
 <head>
@@ -419,7 +433,7 @@ background-color:#ffffff;border:1px solid #f0dce5;border-radius:12px;">
 style="width:62%;padding:32px 28px;">
 <h1 style="margin:0 0 22px;color:#a94f78;font-size:24px;line-height:1.3;">
 {escape(heading)}</h1>
-<p style="margin:0 0 14px;font-size:15px;">Hi {escape(first_name)},</p>
+<p style="margin:0 0 14px;font-size:15px;">Hi {escape(greeting_name)},</p>
 <p style="margin:0 0 22px;color:#62545a;font-size:15px;line-height:1.6;">{escape(message)}</p>
 <table role="presentation" width="100%" cellspacing="0" cellpadding="0"
 style="border-collapse:collapse;background-color:#fff7fa;border:1px solid #f0dce5;font-size:14px;">
@@ -473,6 +487,10 @@ background-color:#fffafd;text-align:center;">
             if candidate.startswith(("http://", "https://"))
             else ""
         )
+
+    @staticmethod
+    def _greeting_name(full_name: str, first_name: str) -> str:
+        return full_name.strip() or first_name.strip() or "there"
 
     @classmethod
     def _calendar_invite(
@@ -629,6 +647,7 @@ background-color:#fffafd;text-align:center;">
         duration_minutes: int = 120,
         online_booking_url: str = "",
         map_link_url: str = "",
+        full_name: str = "",
     ) -> threading.Thread:
         def send() -> None:
             try:
@@ -647,6 +666,7 @@ background-color:#fffafd;text-align:center;">
                     duration_minutes,
                     online_booking_url,
                     map_link_url=map_link_url,
+                    full_name=full_name,
                 )
             except Exception as error:
                 _LOGGER.exception(

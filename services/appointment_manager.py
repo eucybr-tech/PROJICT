@@ -533,7 +533,7 @@ class AppointmentManager:
             if appointment.appointment_id is None:
                 raise RuntimeError("Appointment email reference is unavailable")
             appointment_time = self._as_datetime(appointment.appointment_time)
-            first_name = self._first_name(client.name)
+            full_name = client.name
             settings = self._database.get_studio_settings()
         except Exception:
             _LOGGER.exception(
@@ -544,7 +544,7 @@ class AppointmentManager:
             return
         self._notification_service.send_appointment_status_async(
             appointment.client_email,
-            first_name,
+            full_name,
             service.name,
             appointment_time,
             appointment.appointment_id,
@@ -594,7 +594,7 @@ class AppointmentManager:
                     email_context["calendar_sequence"] = calendar_sequence
                 self._notification_service.send_appointment_reminder(
                     email,
-                    self._first_name(str(details["client_name"])),
+                    str(details["client_name"]),
                     str(details["service_name"]),
                     self._as_datetime(str(details["appointment_time"])),
                     appointment_id,
@@ -644,7 +644,7 @@ class AppointmentManager:
             sender = getattr(self._notification_service, sender_name)
             sender_arguments = (
                 appointment.client_email,
-                self._first_name(client.name),
+                client.name,
                 service.name,
                 self._as_datetime(appointment.appointment_time),
                 appointment_id,
@@ -672,11 +672,6 @@ class AppointmentManager:
                 email_type,
                 appointment_id,
             )
-
-    @staticmethod
-    def _first_name(full_name: str) -> str:
-        parts = full_name.split(maxsplit=1)
-        return parts[0] if parts else "Customer"
 
     @staticmethod
     def _as_datetime(value: datetime | str) -> datetime:

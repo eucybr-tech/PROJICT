@@ -172,7 +172,7 @@ class AppointmentEmailFlowTests(unittest.TestCase):
         self.assertEqual(len(self.sender.booking), 1)
         self.assertEqual(
             self.sender.booking[0][:3],
-            (self.email, "Taylor", "Test Manicure"),
+            (self.email, "Taylor Test", "Test Manicure"),
         )
         self.assertEqual(
             self.sender.booking[0][4], "https://booking.example.test/"
@@ -203,7 +203,9 @@ class AppointmentEmailFlowTests(unittest.TestCase):
         self.assertEqual(self.manager.send_due_reminders(now), 1)
         self.assertEqual(self.manager.send_due_reminders(now), 0)
         self.assertEqual(len(self.sender.reminders), 1)
-        self.assertEqual(self.sender.reminders[0][1:3], ("Taylor", "Test Manicure"))
+        self.assertEqual(
+            self.sender.reminders[0][1:3], ("Taylor Test", "Test Manicure")
+        )
         appointment_id = self._id(appointment)
         self.assertIsNotNone(
             self.database.get_appointment_email_sent_at(appointment_id, "reminder")
@@ -329,7 +331,7 @@ class AppointmentEmailFlowTests(unittest.TestCase):
         self.assertEqual(len(self.sender.thank_you), 1)
         self.assertEqual(
             self.sender.thank_you[0][:3],
-            (self.email, "Taylor", "Test Manicure"),
+            (self.email, "Taylor Test", "Test Manicure"),
         )
         self.assertIsNotNone(
             self.database.get_appointment_email_sent_at(appointment_id, "thank_you")
@@ -554,6 +556,7 @@ class AppointmentEmailFlowTests(unittest.TestCase):
                 "https://reviews.example.test/pearl",
                 75,
                 "https://booking.example.test/",
+                full_name="Taylor Test",
             )
             service.send_appointment_reminder(
                 self.email, "Taylor", "Test Manicure", appointment_time, 42,
@@ -564,6 +567,7 @@ class AppointmentEmailFlowTests(unittest.TestCase):
                 75,
                 online_booking_url="",
                 calendar_sequence=1,
+                full_name="Taylor Test",
             )
             service.send_appointment_thank_you(
                 self.email, "Taylor", "Test Manicure", appointment_time, 42,
@@ -572,6 +576,7 @@ class AppointmentEmailFlowTests(unittest.TestCase):
                 "https://facebook.example.test/pearl",
                 "https://reviews.example.test/pearl",
                 75,
+                full_name="Taylor Test",
             )
             for status in ("confirmed", "cancelled", "rescheduled"):
                 service.send_appointment_status(
@@ -587,6 +592,7 @@ class AppointmentEmailFlowTests(unittest.TestCase):
                     "https://facebook.example.test/pearl",
                     "https://reviews.example.test/pearl",
                     75,
+                    full_name="Taylor Test",
                 )
 
         self.assertEqual(len(sent_messages), 6)
@@ -602,8 +608,7 @@ class AppointmentEmailFlowTests(unittest.TestCase):
                 for part in message.walk()
                 if part.get_content_type() == "text/html"
             )
-            self.assertIn("Taylor", plain_part.get_content())
-            self.assertNotIn("Taylor Test", plain_part.get_content())
+            self.assertIn("Hi Taylor Test,", plain_part.get_content())
             self.assertIn("Nicole Pearl Millari Teodoro", plain_part.get_content())
             self.assertIn("Thanks,\nNicole Pearl Millari Teodoro", plain_part.get_content())
             self.assertIn("Test Manicure", plain_part.get_content())
@@ -615,8 +620,7 @@ class AppointmentEmailFlowTests(unittest.TestCase):
                 "mixed" if index in (1, 3) else "alternative",
             )
             html_body = html_part.get_content()
-            self.assertNotIn("Taylor Test", html_body)
-            self.assertIn("Taylor", html_body)
+            self.assertIn("Hi Taylor Test,", html_body)
             self.assertIn("Test Manicure", html_body)
             self.assertIn("Sunday, November 01, 2026 at 01:30 PM", html_body)
             self.assertIn("PS-000042", html_body)
@@ -746,6 +750,34 @@ class AppointmentEmailFlowTests(unittest.TestCase):
                     self.assertIn(expected_href, html_body)
                 self.assertIn("font-size:15px", html_body)
                 self.assertIn("font-size:14px", html_body)
+
+    def test_email_greeting_uses_full_name_and_safe_fallbacks(self) -> None:
+        cases = (
+            ("Taylor", "Taylor Test", "Hi Taylor Test,", "Hi Taylor Test,"),
+            ("Taylor", "", "Hi Taylor,", "Hi Taylor,"),
+            ("", "", "Hi there,", "Hi there,"),
+            ("", "A<&'", "Hi A<&',", "Hi A&lt;&amp;&#x27;,"),
+        )
+        for first_name, full_name, text_greeting, html_greeting in cases:
+            with self.subTest(first_name=first_name, full_name=full_name):
+                with patch.object(
+                    NotificationService, "_send_message"
+                ) as send_message:
+                    NotificationService().send_booking_received(
+                        self.email,
+                        first_name,
+                        "Test Manicure",
+                        datetime(2026, 11, 1, 13, 30),
+                        42,
+                        full_name=full_name,
+                    )
+
+                text_body = send_message.call_args.args[2]
+                html_body = send_message.call_args.args[3]
+                self.assertIn(text_greeting, text_body)
+                self.assertIn(html_greeting, html_body)
+                self.assertNotIn("price", text_body.lower())
+                self.assertNotIn("price", html_body.lower())
 
     def test_map_link_overrides_address_with_safe_fallbacks(self) -> None:
         cases = (
