@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import sqlite3
 from datetime import date, datetime, time, timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypedDict
 
 from database import Database
 from models import (
@@ -24,6 +24,12 @@ from services.pricing_calculator import PricingCalculator
 from services.schedule_manager import ScheduleManager
 
 _LOGGER = logging.getLogger(__name__)
+
+
+class _ReminderEmailOptions(TypedDict, total=False):
+    online_booking_url: str
+    calendar_sequence: int
+
 
 if TYPE_CHECKING:
     from services.queue_manager import QueueManager
@@ -420,10 +426,12 @@ class AppointmentManager:
             appointment.cancellation_fee = (
                 0 if waive_fee else self._studio_policy.cancellation_fee
             )
-        self._database.update_appointment(appointment)
+        self._database.update_appointment(
+            appointment, increment_calendar_sequence=True
+        )
         if self._queue_manager is not None:
             self._queue_manager.sync_appointment(appointment_id)
-        self._send_status_email(appointment, email_callback)
+        self._send_status_email(appointment, email_callback, "rescheduled")
         return appointment
 
     def update_duration(
@@ -512,6 +520,7 @@ class AppointmentManager:
         self,
         appointment: Appointment,
         callback: EmailCallback,
+        email_status: str | None = None,
     ) -> None:
         if not appointment.client_email.strip():
             return
@@ -520,16 +529,12 @@ class AppointmentManager:
             service = self._database.get_service(appointment.service_id)
             if client is None or service is None:
                 raise RuntimeError("Appointment email details are unavailable")
+            if appointment.appointment_id is None:
+                raise RuntimeError("Appointment email reference is unavailable")
             appointment_time = self._as_datetime(appointment.appointment_time)
             first_name = self._first_name(client.name)
-            summary = (
-                f"Hi {first_name},\n"
-                f"Service: {service.name}\n"
-                f"Date: {appointment_time:%B %d, %Y}\n"
-                f"Time: {appointment_time:%I:%M %p}\n"
-                "Pearl's Signature"
-            )
-        except (KeyError, RuntimeError, sqlite3.Error):
+            settings = self._database.get_studio_settings()
+        except Exception:
             _LOGGER.exception(
                 "Could not prepare appointment status email for appointment %s",
                 appointment.appointment_id,
@@ -538,8 +543,24 @@ class AppointmentManager:
             return
         self._notification_service.send_appointment_status_async(
             appointment.client_email,
-            summary,
+            first_name,
+            service.name,
+            appointment_time,
+            appointment.appointment_id,
+            email_status
+            or (
+                "cancelled"
+                if appointment.status is AppointmentStatus.CANCELLED
+                else "confirmed"
+            ),
+            settings.studio_address,
+            settings.loyalty_phone,
             callback,
+            provider_name=settings.owner_provider_name,
+            facebook_page=settings.loyalty_facebook,
+            review_url=settings.review_url,
+            duration_minutes=appointment.duration_minutes,
+            online_booking_url=settings.online_booking_url,
         )
 
     def send_due_reminders(self, now: datetime | None = None) -> int:
@@ -558,11 +579,28 @@ class AppointmentManager:
             if not email:
                 continue
             try:
+                settings = self._database.get_studio_settings()
+                email_context: _ReminderEmailOptions = {}
+                if settings.online_booking_url:
+                    email_context["online_booking_url"] = (
+                        settings.online_booking_url
+                    )
+                calendar_sequence = int(details["calendar_sequence"])
+                if calendar_sequence:
+                    email_context["calendar_sequence"] = calendar_sequence
                 self._notification_service.send_appointment_reminder(
                     email,
                     self._first_name(str(details["client_name"])),
                     str(details["service_name"]),
                     self._as_datetime(str(details["appointment_time"])),
+                    appointment_id,
+                    settings.studio_address,
+                    settings.loyalty_phone,
+                    settings.owner_provider_name,
+                    settings.loyalty_facebook,
+                    settings.review_url,
+                    int(details["duration_minutes"]),
+                    **email_context,
                 )
                 if self._database.mark_appointment_email_sent(
                     appointment_id, "reminder", current_time
@@ -598,13 +636,24 @@ class AppointmentManager:
             service = self._database.get_service(appointment.service_id)
             if client is None or service is None:
                 raise RuntimeError("Appointment email details are unavailable")
+            settings = self._database.get_studio_settings()
             sender = getattr(self._notification_service, sender_name)
-            sender(
+            sender_arguments = (
                 appointment.client_email,
                 self._first_name(client.name),
                 service.name,
                 self._as_datetime(appointment.appointment_time),
+                appointment_id,
+                settings.studio_address,
+                settings.loyalty_phone,
+                settings.owner_provider_name,
+                settings.loyalty_facebook,
+                settings.review_url,
+                appointment.duration_minutes,
             )
+            if settings.online_booking_url:
+                sender_arguments += (settings.online_booking_url,)
+            sender(*sender_arguments)
             self._database.mark_appointment_email_sent(
                 appointment_id, email_type, datetime.now()
             )

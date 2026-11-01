@@ -41,29 +41,79 @@ class MockNotificationService(NotificationService):
         self.thank_you_emails: list[tuple[str, str, str, datetime]] = []
 
     def send_booking_received(
-        self, email: str, first_name: str, service_name: str, appointment_time: datetime
+        self,
+        email: str,
+        first_name: str,
+        service_name: str,
+        appointment_time: datetime,
+        _appointment_id: int = 0,
+        _studio_address: str = "",
+        _studio_phone: str = "",
+        _provider_name: str = "",
+        _facebook_page: str = "",
+        _review_url: str = "",
+        _duration_minutes: int = 120,
     ) -> None:
         self.booking_emails.append(
             (email, first_name, service_name, appointment_time)
         )
 
     def send_appointment_reminder(
-        self, email: str, first_name: str, service_name: str, appointment_time: datetime
+        self,
+        email: str,
+        first_name: str,
+        service_name: str,
+        appointment_time: datetime,
+        _appointment_id: int = 0,
+        _studio_address: str = "",
+        _studio_phone: str = "",
+        _provider_name: str = "",
+        _facebook_page: str = "",
+        _review_url: str = "",
+        _duration_minutes: int = 120,
     ) -> None:
         self.reminder_emails.append(
             (email, first_name, service_name, appointment_time)
         )
 
     def send_appointment_thank_you(
-        self, email: str, first_name: str, service_name: str, appointment_time: datetime
+        self,
+        email: str,
+        first_name: str,
+        service_name: str,
+        appointment_time: datetime,
+        _appointment_id: int = 0,
+        _studio_address: str = "",
+        _studio_phone: str = "",
+        _provider_name: str = "",
+        _facebook_page: str = "",
+        _review_url: str = "",
+        _duration_minutes: int = 120,
     ) -> None:
         self.thank_you_emails.append(
             (email, first_name, service_name, appointment_time)
         )
 
     def send_appointment_status_async(
-        self, email: str, appointment_summary: str, callback: EmailCallback
+        self,
+        email: str,
+        first_name: str,
+        service_name: str,
+        appointment_time: datetime,
+        appointment_id: int,
+        status: str,
+        studio_address: str,
+        studio_phone: str,
+        callback: EmailCallback,
+        **_email_context,
     ) -> threading.Thread:
+        appointment_summary = (
+            f"Hi {first_name}\n"
+            f"Service: {service_name}\n"
+            f"Time: {appointment_time:%I:%M %p}\n"
+            f"Booking ID: {appointment_id}\n"
+            f"Status: {status}"
+        )
         self.appointment_emails.append((email, appointment_summary))
         callback(True, None)
         return threading.Thread()

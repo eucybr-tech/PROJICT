@@ -33,6 +33,9 @@ class StudioSettingsManager:
         loyalty_phone: str | None = None,
         loyalty_valid_until: str | None = None,
         loyalty_terms: str | None = None,
+        owner_provider_name: str | None = None,
+        review_url: str | None = None,
+        online_booking_url: str | None = None,
     ) -> StudioSettings:
         current = self.get_settings()
         settings = StudioSettings(
@@ -62,6 +65,17 @@ class StudioSettingsManager:
                 else loyalty_valid_until
             ),
             current.loyalty_terms if loyalty_terms is None else loyalty_terms,
+            (
+                current.owner_provider_name
+                if owner_provider_name is None
+                else owner_provider_name
+            ),
+            current.review_url if review_url is None else review_url,
+            (
+                current.online_booking_url
+                if online_booking_url is None
+                else online_booking_url
+            ),
         )
         self._database.update_studio_settings(settings)
         return settings

@@ -81,6 +81,9 @@ class StudioSettingsScreen(BasePage):
         self._loyalty_web_status.setWordWrap(True)
         self._loyalty_facebook = QLineEdit()
         self._loyalty_phone = QLineEdit()
+        self._owner_provider_name = QLineEdit()
+        self._review_url = QLineEdit()
+        self._online_booking_url = QLineEdit()
         self._loyalty_valid_until = QLineEdit()
         self._loyalty_valid_until.setPlaceholderText("YYYY-MM-DD (optional)")
         self._loyalty_terms = QTextEdit()
@@ -106,6 +109,9 @@ class StudioSettingsScreen(BasePage):
         form.addRow("Loyalty web server", self._loyalty_web_toggle)
         form.addRow("Server status", self._loyalty_web_status)
         form.addRow("Loyalty Facebook handle", self._loyalty_facebook)
+        form.addRow("Owner / provider name", self._owner_provider_name)
+        form.addRow("Review URL (optional)", self._review_url)
+        form.addRow("Online booking link (URL)", self._online_booking_url)
         form.addRow("Loyalty contact phone", self._loyalty_phone)
         form.addRow("Loyalty valid until", self._loyalty_valid_until)
         form.addRow("Loyalty terms (one per line)", self._loyalty_terms)
@@ -135,6 +141,9 @@ class StudioSettingsScreen(BasePage):
         self._show_map_image(self._resolve_map_image_path(self._map_image_path))
         self._loyalty_web_port.setValue(loyalty_web_port)
         self._loyalty_facebook.setText(settings.loyalty_facebook)
+        self._owner_provider_name.setText(settings.owner_provider_name)
+        self._review_url.setText(settings.review_url)
+        self._online_booking_url.setText(settings.online_booking_url)
         self._loyalty_phone.setText(settings.loyalty_phone)
         self._loyalty_valid_until.setText(settings.loyalty_valid_until)
         self._loyalty_terms.setPlainText(settings.loyalty_terms)
@@ -178,6 +187,9 @@ class StudioSettingsScreen(BasePage):
                 self._loyalty_phone.text(),
                 self._loyalty_valid_until.text(),
                 self._loyalty_terms.toPlainText(),
+                self._owner_provider_name.text(),
+                self._review_url.text(),
+                self._online_booking_url.text(),
             )
         except (sqlite3.Error, TypeError, ValueError) as error:
             QMessageBox.warning(self, "Invalid studio settings", str(error))

@@ -109,6 +109,7 @@ class Database:
                 booking_email_sent_at TEXT,
                 reminder_sent_at TEXT,
                 thank_you_sent_at TEXT,
+                calendar_sequence INTEGER NOT NULL DEFAULT 0,
                 FOREIGN KEY (client_email) REFERENCES clients(email),
                 FOREIGN KEY (service_id) REFERENCES services(service_id)
             );
@@ -176,6 +177,10 @@ class Database:
                 loyalty_facebook TEXT NOT NULL DEFAULT '@pearl''s signailture',
                 loyalty_phone TEXT NOT NULL DEFAULT '09690811806',
                 loyalty_valid_until TEXT NOT NULL DEFAULT '',
+                owner_provider_name TEXT NOT NULL DEFAULT
+                    'Nicole Pearl Millari Teodoro',
+                review_url TEXT NOT NULL DEFAULT '',
+                online_booking_url TEXT NOT NULL DEFAULT '',
                 loyalty_terms TEXT NOT NULL DEFAULT
                     'This loyalty card is non-transferable.
 Earn sticker for every minimum spend of P500 per visit.
@@ -378,6 +383,7 @@ Loyalty cards are valid only until expiry date'
                 "booking_email_sent_at": "TEXT",
                 "reminder_sent_at": "TEXT",
                 "thank_you_sent_at": "TEXT",
+                "calendar_sequence": "INTEGER NOT NULL DEFAULT 0",
             },
             "studio_settings": {
                 "allowed_areas": "TEXT NOT NULL DEFAULT '[\"Pila\"]'",
@@ -390,6 +396,11 @@ Loyalty cards are valid only until expiry date'
                 "loyalty_facebook": "TEXT NOT NULL DEFAULT '@pearl''s signailture'",
                 "loyalty_phone": "TEXT NOT NULL DEFAULT '09690811806'",
                 "loyalty_valid_until": "TEXT NOT NULL DEFAULT ''",
+                "owner_provider_name": (
+                    "TEXT NOT NULL DEFAULT 'Nicole Pearl Millari Teodoro'"
+                ),
+                "review_url": "TEXT NOT NULL DEFAULT ''",
+                "online_booking_url": "TEXT NOT NULL DEFAULT ''",
                 "loyalty_terms": (
                     "TEXT NOT NULL DEFAULT 'This loyalty card is non-transferable.\n"
                     "Earn sticker for every minimum spend of P500 per visit.\n"
@@ -421,6 +432,17 @@ Loyalty cards are valid only until expiry date'
                         SET duration_minutes = CAST(ROUND(duration_hours * 60) AS INTEGER)
                         """
                     )
+            if (
+                table_name == "studio_settings"
+                and "owner_provider_name" in newly_added
+            ):
+                self._connection.execute(
+                    """
+                    UPDATE studio_settings
+                    SET owner_provider_name = 'Nicole Pearl Millari Teodoro'
+                    WHERE owner_provider_name = ''
+                    """
+                )
 
     def _migrate_queue_columns(self) -> None:
         existing_columns = {
@@ -820,7 +842,8 @@ Loyalty cards are valid only until expiry date'
         rows = self._connection.execute(
             """
             SELECT a.appointment_id, a.client_email, c.name AS client_name,
-                   s.name AS service_name, a.appointment_time
+                   s.name AS service_name, a.appointment_time,
+                   a.duration_minutes, a.calendar_sequence
             FROM appointments AS a
             JOIN clients AS c ON c.email = a.client_email
             JOIN services AS s ON s.service_id = a.service_id
@@ -839,6 +862,8 @@ Loyalty cards are valid only until expiry date'
                 "client_name": str(row["client_name"]),
                 "service_name": str(row["service_name"]),
                 "appointment_time": str(row["appointment_time"]),
+                "duration_minutes": int(row["duration_minutes"]),
+                "calendar_sequence": int(row["calendar_sequence"]),
             }
             for row in rows
         ]
@@ -997,7 +1022,11 @@ Loyalty cards are valid only until expiry date'
         ).fetchall()
         return [self._appointment_from_row(row) for row in rows]
 
-    def update_appointment(self, appointment: Appointment) -> None:
+    def update_appointment(
+        self,
+        appointment: Appointment,
+        increment_calendar_sequence: bool = False,
+    ) -> None:
         if appointment.appointment_id is None:
             raise ValueError("appointment.appointment_id is required to update an appointment")
         serialized_time = self._serialize_time(appointment.appointment_time)
@@ -1014,7 +1043,8 @@ Loyalty cards are valid only until expiry date'
                     reminder_sent_at = CASE
                         WHEN appointment_time != ? THEN NULL
                         ELSE reminder_sent_at
-                    END
+                    END,
+                    calendar_sequence = calendar_sequence + ?
                 WHERE appointment_id = ?
                 """,
                 (
@@ -1037,6 +1067,7 @@ Loyalty cards are valid only until expiry date'
                     appointment.visit_type.value,
                     appointment.service_address,
                     serialized_time,
+                    int(increment_calendar_sequence),
                     appointment.appointment_id,
                 ),
             )
@@ -1629,7 +1660,8 @@ Loyalty cards are valid only until expiry date'
                    allowed_areas, cleaning_buffer_minutes, studio_address,
                    maps_embed_url, map_latitude, map_longitude, map_image_path,
                    loyalty_facebook, loyalty_phone, loyalty_valid_until,
-                   loyalty_terms
+                   loyalty_terms, owner_provider_name, review_url,
+                   online_booking_url
             FROM studio_settings WHERE setting_id = 1
             """
         ).fetchone()
@@ -1650,6 +1682,9 @@ Loyalty cards are valid only until expiry date'
             row["loyalty_phone"],
             row["loyalty_valid_until"],
             row["loyalty_terms"],
+            row["owner_provider_name"],
+            row["review_url"],
+            row["online_booking_url"],
         )
 
     def update_studio_settings(self, settings: StudioSettings) -> None:
@@ -1663,8 +1698,9 @@ Loyalty cards are valid only until expiry date'
                      service_area_note, allowed_areas, cleaning_buffer_minutes,
                      studio_address, maps_embed_url, map_latitude,
                      map_longitude, map_image_path, loyalty_facebook,
-                     loyalty_phone, loyalty_valid_until, loyalty_terms)
-                VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     loyalty_phone, loyalty_valid_until, loyalty_terms,
+                     owner_provider_name, review_url, online_booking_url)
+                VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(setting_id) DO UPDATE SET
                     default_travel_fee = excluded.default_travel_fee,
                     travel_buffer_minutes = excluded.travel_buffer_minutes,
@@ -1679,7 +1715,10 @@ Loyalty cards are valid only until expiry date'
                     loyalty_facebook = excluded.loyalty_facebook,
                     loyalty_phone = excluded.loyalty_phone,
                     loyalty_valid_until = excluded.loyalty_valid_until,
-                    loyalty_terms = excluded.loyalty_terms
+                    loyalty_terms = excluded.loyalty_terms,
+                    owner_provider_name = excluded.owner_provider_name,
+                    review_url = excluded.review_url,
+                    online_booking_url = excluded.online_booking_url
                 """,
                 (
                     settings.default_travel_fee,
@@ -1696,6 +1735,9 @@ Loyalty cards are valid only until expiry date'
                     settings.loyalty_phone,
                     settings.loyalty_valid_until,
                     settings.loyalty_terms,
+                    settings.owner_provider_name,
+                    settings.review_url,
+                    settings.online_booking_url,
                 ),
             )
 

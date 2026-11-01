@@ -112,6 +112,11 @@ class LoyaltyCardPageTests(unittest.TestCase):
                 settings_manager = StudioSettingsManager(database)
                 settings = settings_manager.get_settings()
                 self.assertEqual(settings.loyalty_facebook, "@pearl's signailture")
+                self.assertEqual(
+                    settings.owner_provider_name,
+                    "Nicole Pearl Millari Teodoro",
+                )
+                self.assertEqual(settings.review_url, "")
                 self.assertEqual(settings.loyalty_phone, "09690811806")
                 self.assertEqual(settings.loyalty_valid_until, "")
                 self.assertEqual(len(settings.loyalty_terms.splitlines()), 5)
@@ -137,6 +142,8 @@ class LoyaltyCardPageTests(unittest.TestCase):
 
                 admin_screen = StudioSettingsScreen(settings_manager)
                 admin_screen._loyalty_facebook.setText("@test & <handle>")
+                admin_screen._owner_provider_name.setText("Provider Name")
+                admin_screen._review_url.setText("https://reviews.example.test/")
                 admin_screen._loyalty_phone.setText("09990001122")
                 admin_screen._loyalty_valid_until.setText("2030-12-31")
                 admin_screen._loyalty_terms.setPlainText(
@@ -148,6 +155,8 @@ class LoyaltyCardPageTests(unittest.TestCase):
                     admin_screen.save_settings()
                 saved = settings_manager.get_settings()
                 self.assertEqual(saved.loyalty_facebook, "@test & <handle>")
+                self.assertEqual(saved.owner_provider_name, "Provider Name")
+                self.assertEqual(saved.review_url, "https://reviews.example.test/")
                 self.assertEqual(saved.loyalty_phone, "09990001122")
                 self.assertEqual(saved.loyalty_valid_until, "2030-12-31")
                 self.assertEqual(

@@ -16,6 +16,7 @@ class StudioSettings:
     _DEFAULT_CLEANING_BUFFER_MINUTES = 0
     _DEFAULT_LOYALTY_FACEBOOK = "@pearl's signailture"
     _DEFAULT_LOYALTY_PHONE = "09690811806"
+    _DEFAULT_OWNER_PROVIDER_NAME = "Nicole Pearl Millari Teodoro"
     _DEFAULT_LOYALTY_TERMS = (
         "This loyalty card is non-transferable.\n"
         "Earn sticker for every minimum spend of P500 per visit.\n"
@@ -40,6 +41,9 @@ class StudioSettings:
         loyalty_phone: str = _DEFAULT_LOYALTY_PHONE,
         loyalty_valid_until: str = "",
         loyalty_terms: str = _DEFAULT_LOYALTY_TERMS,
+        owner_provider_name: str = _DEFAULT_OWNER_PROVIDER_NAME,
+        review_url: str = "",
+        online_booking_url: str = "",
     ) -> None:
         self._default_travel_fee = validate_nonnegative_number(
             default_travel_fee, "default_travel_fee"
@@ -81,6 +85,13 @@ class StudioSettings:
         )
         self._loyalty_phone = self._validate_map_text(
             loyalty_phone, "loyalty_phone"
+        )
+        self._owner_provider_name = self._validate_map_text(
+            owner_provider_name, "owner_provider_name"
+        )
+        self._review_url = self._validate_map_text(review_url, "review_url")
+        self._online_booking_url = self._validate_map_text(
+            online_booking_url, "online_booking_url"
         )
         self._loyalty_valid_until = self._validate_valid_until(
             loyalty_valid_until
@@ -214,3 +225,15 @@ class StudioSettings:
     @property
     def loyalty_terms(self) -> str:
         return self._loyalty_terms
+
+    @property
+    def owner_provider_name(self) -> str:
+        return self._owner_provider_name
+
+    @property
+    def review_url(self) -> str:
+        return self._review_url
+
+    @property
+    def online_booking_url(self) -> str:
+        return self._online_booking_url
