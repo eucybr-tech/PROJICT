@@ -1,3 +1,6 @@
+import calendar
+from datetime import date
+
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QFrame,
@@ -93,15 +96,15 @@ class LoyaltyScreen(BasePage):
                 widget.deleteLater()
         self._step_labels.clear()
 
-        stamps_required = self._loyalty_manager.get_stamps_required()
+        minimum_spend = self._loyalty_manager.get_minimum_spend_per_appointment()
         instructions = (
-            "Earn a stamp after each completed visit.",
+            (
+                f"Earn one stamp for each completed appointment with a total "
+                f"of at least P{minimum_spend:g} (travel fees do not count)."
+            ),
             "Your nail technician will show you a QR code. Scan it with your phone camera to get your stamp.",
             "Your card page opens while your phone is connected to the studio's Wi-Fi.",
-            (
-                f"Collect {stamps_required} stamps to earn your reward. "
-                "You receive your reward at the studio."
-            ),
+            "At 5 and 10 stamps, you earn a prize draw entry. The card resets each month.",
         )
         for index, instruction in enumerate(instructions, start=1):
             row_widget = QWidget()
@@ -148,7 +151,9 @@ class LoyaltyScreen(BasePage):
             bullet.setMinimumWidth(0)
             bullet.setStyleSheet("color: #3f3437;")
             self._terms_items_layout.addWidget(bullet)
-        valid_until = settings.loyalty_valid_until
+        current_date = date.today()
+        last_day = calendar.monthrange(current_date.year, current_date.month)[1]
         self._valid_until_label.setText(
-            f"Valid until: {valid_until}" if valid_until else ""
+            f"Valid until "
+            f"{date(current_date.year, current_date.month, last_day):%B %d, %Y}."
         )

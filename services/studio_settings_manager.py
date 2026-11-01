@@ -36,6 +36,8 @@ class StudioSettingsManager:
         owner_provider_name: str | None = None,
         review_url: str | None = None,
         online_booking_url: str | None = None,
+        minimum_spend_per_appointment: int | float | None = None,
+        map_link_url: str | None = None,
     ) -> StudioSettings:
         current = self.get_settings()
         settings = StudioSettings(
@@ -76,6 +78,12 @@ class StudioSettingsManager:
                 if online_booking_url is None
                 else online_booking_url
             ),
+            (
+                current.minimum_spend_per_appointment
+                if minimum_spend_per_appointment is None
+                else minimum_spend_per_appointment
+            ),
+            current.map_link_url if map_link_url is None else map_link_url,
         )
         self._database.update_studio_settings(settings)
         return settings

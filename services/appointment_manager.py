@@ -29,6 +29,7 @@ _LOGGER = logging.getLogger(__name__)
 class _ReminderEmailOptions(TypedDict, total=False):
     online_booking_url: str
     calendar_sequence: int
+    map_link_url: str
 
 
 if TYPE_CHECKING:
@@ -561,6 +562,7 @@ class AppointmentManager:
             review_url=settings.review_url,
             duration_minutes=appointment.duration_minutes,
             online_booking_url=settings.online_booking_url,
+            map_link_url=settings.map_link_url,
         )
 
     def send_due_reminders(self, now: datetime | None = None) -> int:
@@ -585,6 +587,8 @@ class AppointmentManager:
                     email_context["online_booking_url"] = (
                         settings.online_booking_url
                     )
+                if settings.map_link_url:
+                    email_context["map_link_url"] = settings.map_link_url
                 calendar_sequence = int(details["calendar_sequence"])
                 if calendar_sequence:
                     email_context["calendar_sequence"] = calendar_sequence
@@ -653,7 +657,12 @@ class AppointmentManager:
             )
             if settings.online_booking_url:
                 sender_arguments += (settings.online_booking_url,)
-            sender(*sender_arguments)
+            email_context = (
+                {"map_link_url": settings.map_link_url}
+                if settings.map_link_url
+                else {}
+            )
+            sender(*sender_arguments, **email_context)
             self._database.mark_appointment_email_sent(
                 appointment_id, email_type, datetime.now()
             )

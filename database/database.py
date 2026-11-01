@@ -21,6 +21,16 @@ from models import (
 )
 
 
+class StampNotQualifiedError(ValueError):
+    def __init__(self, total_price: float, minimum_spend: float) -> None:
+        self.total_price = total_price
+        self.minimum_spend = minimum_spend
+        super().__init__(
+            f"This appointment totals P{total_price:g}, below the minimum spend "
+            f"of P{minimum_spend:g}, so no stamp is earned."
+        )
+
+
 class Database:
     """SQLite persistence boundary. All SQL statements are kept in this class."""
 
@@ -121,6 +131,34 @@ class Database:
                 view_code TEXT,
                 FOREIGN KEY (client_email) REFERENCES clients(email)
             );
+            CREATE TABLE IF NOT EXISTS loyalty_monthly_stamps (
+                appointment_id INTEGER PRIMARY KEY,
+                client_email TEXT NOT NULL COLLATE NOCASE,
+                card_month TEXT NOT NULL,
+                stamped_at TEXT NOT NULL,
+                active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1))
+            );
+            CREATE INDEX IF NOT EXISTS idx_loyalty_monthly_stamps_client_month
+                ON loyalty_monthly_stamps(client_email, card_month, active);
+            CREATE TABLE IF NOT EXISTS loyalty_prizes (
+                prize_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                milestone TEXT NOT NULL CHECK (milestone IN ('5', '10', 'both')),
+                active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1))
+            );
+            CREATE TABLE IF NOT EXISTS loyalty_prize_draws (
+                draw_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                client_email TEXT NOT NULL COLLATE NOCASE,
+                card_month TEXT NOT NULL,
+                milestone INTEGER NOT NULL CHECK (milestone IN (5, 10)),
+                status TEXT NOT NULL DEFAULT 'Pending'
+                    CHECK (status IN ('Pending', 'Drawn', 'Given')),
+                prize_name TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                drawn_at TEXT,
+                given_at TEXT,
+                UNIQUE (client_email, card_month, milestone)
+            );
             CREATE TABLE IF NOT EXISTS stamp_tokens (
                 token TEXT PRIMARY KEY UNIQUE,
                 appointment_id INTEGER NOT NULL,
@@ -181,6 +219,9 @@ class Database:
                     'Nicole Pearl Millari Teodoro',
                 review_url TEXT NOT NULL DEFAULT '',
                 online_booking_url TEXT NOT NULL DEFAULT '',
+                minimum_spend_per_appointment REAL NOT NULL DEFAULT 500
+                    CHECK (minimum_spend_per_appointment >= 0),
+                map_link_url TEXT NOT NULL DEFAULT '',
                 loyalty_terms TEXT NOT NULL DEFAULT
                     'This loyalty card is non-transferable.
 Earn sticker for every minimum spend of P500 per visit.
@@ -271,6 +312,7 @@ Loyalty cards are valid only until expiry date'
         self._migrate_loyalty_card_codes()
         self._migrate_loyalty_view_codes()
         self._migrate_loyalty_transaction_audit()
+        self._migrate_loyalty_monthly_stamps()
         with self._connection:
             self._connection.execute(
                 """
@@ -401,6 +443,11 @@ Loyalty cards are valid only until expiry date'
                 ),
                 "review_url": "TEXT NOT NULL DEFAULT ''",
                 "online_booking_url": "TEXT NOT NULL DEFAULT ''",
+                "minimum_spend_per_appointment": (
+                    "REAL NOT NULL DEFAULT 500 CHECK "
+                    "(minimum_spend_per_appointment >= 0)"
+                ),
+                "map_link_url": "TEXT NOT NULL DEFAULT ''",
                 "loyalty_terms": (
                     "TEXT NOT NULL DEFAULT 'This loyalty card is non-transferable.\n"
                     "Earn sticker for every minimum spend of P500 per visit.\n"
@@ -561,6 +608,30 @@ Loyalty cards are valid only until expiry date'
                       WHERE audit.appointment_id = stamp.appointment_id
                         AND audit.type = 'STAMP'
                   )
+                """
+            )
+
+    def _migrate_loyalty_monthly_stamps(self) -> None:
+        with self._connection:
+            self._connection.execute(
+                """
+                INSERT OR IGNORE INTO loyalty_monthly_stamps
+                    (appointment_id, client_email, card_month, stamped_at, active)
+                SELECT stamp.appointment_id, stamp.client_email,
+                       substr(appointment.appointment_time, 1, 7),
+                       stamp.awarded_at,
+                       CASE WHEN (
+                           SELECT tx.type
+                           FROM stamp_transactions AS tx
+                           WHERE tx.appointment_id = stamp.appointment_id
+                           ORDER BY tx.id DESC LIMIT 1
+                       ) = 'REVERSAL' THEN 0 ELSE 1 END
+                FROM loyalty_stamp_log AS stamp
+                JOIN appointments AS appointment
+                  ON appointment.appointment_id = stamp.appointment_id
+                WHERE length(appointment.appointment_time) >= 7
+                  AND substr(appointment.appointment_time, 1, 7)
+                      GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]'
                 """
             )
 
@@ -1126,10 +1197,12 @@ Loyalty cards are valid only until expiry date'
         ).fetchone()
         return self._loyalty_card_from_row(row) if row else None
 
-    def get_web_card(self, view_code: str) -> tuple[str, int] | None:
+    def get_web_card(
+        self, view_code: str, today: date | None = None
+    ) -> tuple[str, int, list[dict[str, object]], bool] | None:
         row = self._connection.execute(
             """
-            SELECT clients.name, loyalty_cards.stamps
+            SELECT clients.name, loyalty_cards.client_email
             FROM loyalty_cards
             JOIN clients ON clients.email = loyalty_cards.client_email
             WHERE loyalty_cards.view_code = ?
@@ -1138,7 +1211,20 @@ Loyalty cards are valid only until expiry date'
         ).fetchone()
         if row is None:
             return None
-        return (str(row["name"]), int(row["stamps"]))
+        current_month = (today or date.today()).strftime("%Y-%m")
+        stamps = self._monthly_stamp_count(row["client_email"], current_month)
+        previous_stamps = self._connection.execute(
+            """
+            SELECT 1 FROM loyalty_monthly_stamps
+            WHERE client_email = ? AND card_month < ? LIMIT 1
+            """,
+            (row["client_email"], current_month),
+        ).fetchone()
+        expired = stamps == 0 and previous_stamps is not None
+        draws = self.get_loyalty_prize_draws(
+            client_email=str(row["client_email"]), card_month=current_month
+        )
+        return (str(row["name"]), stamps, draws, expired)
 
     def create_stamp_token(self, appointment_id: int) -> str:
         now = datetime.now(timezone.utc)
@@ -1146,7 +1232,7 @@ Loyalty cards are valid only until expiry date'
             self._connection.execute("BEGIN IMMEDIATE")
             appointment = self._connection.execute(
                 """
-                SELECT client_email, status FROM appointments
+                SELECT client_email, status, total_price FROM appointments
                 WHERE appointment_id = ?
                 """,
                 (appointment_id,),
@@ -1157,7 +1243,10 @@ Loyalty cards are valid only until expiry date'
                 raise ValueError(
                     "A stamp link can only be created for a completed appointment"
                 )
-            if self._appointment_is_stamped(appointment_id):
+            self._ensure_appointment_qualifies(float(appointment["total_price"]))
+            if self._appointment_is_stamped(appointment_id) or self._monthly_stamp_exists(
+                appointment_id
+            ):
                 raise ValueError("This appointment has already earned a stamp")
 
             card = self._connection.execute(
@@ -1233,7 +1322,7 @@ Loyalty cards are valid only until expiry date'
 
             appointment = self._connection.execute(
                 """
-                SELECT client_email FROM appointments
+                SELECT client_email, total_price FROM appointments
                 WHERE appointment_id = ? AND status = 'COMPLETED'
                 """,
                 (token_row["appointment_id"],),
@@ -1258,6 +1347,19 @@ Loyalty cards are valid only until expiry date'
                     (current_time.isoformat(), token),
                 )
                 return ("used", None)
+            if self._monthly_stamp_exists(token_row["appointment_id"]):
+                self._connection.execute(
+                    "UPDATE stamp_tokens SET used_at = ? WHERE token = ?",
+                    (current_time.isoformat(), token),
+                )
+                return ("used", None)
+            minimum_spend = self.get_minimum_spend_per_appointment()
+            if float(appointment["total_price"]) < minimum_spend:
+                self._connection.execute(
+                    "UPDATE stamp_tokens SET used_at = ? WHERE token = ?",
+                    (current_time.isoformat(), token),
+                )
+                return ("not_qualified", None)
             if not self._record_stamp_in_transaction(
                 token_row["appointment_id"],
                 token_row["card_code"],
@@ -1293,20 +1395,24 @@ Loyalty cards are valid only until expiry date'
     def count_unstamped_completed_visits(self, email: str) -> int:
         rows = self._connection.execute(
             """
-            SELECT appointment_id
-            FROM appointments
-            WHERE client_email = ?
-              AND status = 'COMPLETED'
+            SELECT appointment.appointment_id, appointment.total_price
+            FROM appointments AS appointment
+            WHERE appointment.client_email = ?
+              AND appointment.status = 'COMPLETED'
             """,
             (email.strip().lower(),),
         ).fetchall()
         return sum(
             not self._appointment_is_stamped(row["appointment_id"])
+            and not self._monthly_stamp_exists(row["appointment_id"])
             for row in rows
         )
 
     def has_loyalty_stamp_for_appointment(self, appointment_id: int) -> bool:
-        return self._appointment_is_stamped(appointment_id)
+        return (
+            self._appointment_is_stamped(appointment_id)
+            or self._monthly_stamp_exists(appointment_id)
+        )
 
     def has_active_loyalty_stamp_for_appointment(self, appointment_id: int) -> bool:
         latest = self._connection.execute(
@@ -1348,6 +1454,39 @@ Loyalty cards are valid only until expiry date'
             return False
         return True
 
+    def _monthly_stamp_exists(self, appointment_id: int) -> bool:
+        return (
+            self._connection.execute(
+                "SELECT 1 FROM loyalty_monthly_stamps WHERE appointment_id = ?",
+                (appointment_id,),
+            ).fetchone()
+            is not None
+        )
+
+    def _monthly_stamp_count(self, email: str, card_month: str) -> int:
+        row = self._connection.execute(
+            """
+            SELECT COUNT(*) AS stamp_count FROM loyalty_monthly_stamps
+            WHERE client_email = ? AND card_month = ? AND active = 1
+            """,
+            (email, card_month),
+        ).fetchone()
+        return int(row["stamp_count"]) if row else 0
+
+    def get_minimum_spend_per_appointment(self) -> float:
+        row = self._connection.execute(
+            """
+            SELECT minimum_spend_per_appointment
+            FROM studio_settings WHERE setting_id = 1
+            """
+        ).fetchone()
+        return float(row["minimum_spend_per_appointment"]) if row else 500.0
+
+    def _ensure_appointment_qualifies(self, total_price: float) -> None:
+        minimum_spend = self.get_minimum_spend_per_appointment()
+        if total_price < minimum_spend:
+            raise StampNotQualifiedError(total_price, minimum_spend)
+
     def _record_stamp_in_transaction(
         self,
         appointment_id: int,
@@ -1373,8 +1512,40 @@ Loyalty cards are valid only until expiry date'
             or appointment["client_email"].casefold()
             != card["client_email"].casefold()
             or self._appointment_is_stamped(appointment_id)
+            or self._monthly_stamp_exists(appointment_id)
         ):
             return False
+        appointment_details = self._connection.execute(
+            """
+            SELECT appointment_time, total_price FROM appointments
+            WHERE appointment_id = ?
+            """,
+            (appointment_id,),
+        ).fetchone()
+        if appointment_details is None:
+            return False
+        total_price = float(appointment_details["total_price"])
+        minimum_spend = self.get_minimum_spend_per_appointment()
+        if total_price < minimum_spend:
+            raise StampNotQualifiedError(total_price, minimum_spend)
+        appointment_date = datetime.fromisoformat(
+            str(appointment_details["appointment_time"])
+        ).date()
+        card_month = appointment_date.strftime("%Y-%m")
+        stamps_before = self._monthly_stamp_count(card["client_email"], card_month)
+        self._connection.execute(
+            """
+            INSERT INTO loyalty_monthly_stamps
+                (appointment_id, client_email, card_month, stamped_at, active)
+            VALUES (?, ?, ?, ?, 1)
+            """,
+            (
+                appointment_id,
+                card["client_email"],
+                card_month,
+                created_at.isoformat(),
+            ),
+        )
         has_stamp_log = self._connection.execute(
             "SELECT 1 FROM loyalty_stamp_log WHERE appointment_id = ?",
             (appointment_id,),
@@ -1400,6 +1571,21 @@ Loyalty cards are valid only until expiry date'
             """,
             (appointment_id, card_code, reason, admin_role, created_at.isoformat()),
         )
+        milestone = stamps_before + 1
+        if milestone in (5, 10):
+            self._connection.execute(
+                """
+                INSERT OR IGNORE INTO loyalty_prize_draws
+                    (client_email, card_month, milestone, status, created_at)
+                VALUES (?, ?, ?, 'Pending', ?)
+                """,
+                (
+                    card["client_email"],
+                    card_month,
+                    milestone,
+                    created_at.isoformat(),
+                ),
+            )
         return True
 
     def award_next_unstamped_completed_visit(
@@ -1417,7 +1603,7 @@ Loyalty cards are valid only until expiry date'
                 return None
             appointments = self._connection.execute(
                 """
-                SELECT appointment.appointment_id
+                SELECT appointment.appointment_id, appointment.total_price
                 FROM appointments AS appointment
                 WHERE appointment.client_email = ?
                   AND appointment.status = 'COMPLETED'
@@ -1430,11 +1616,17 @@ Loyalty cards are valid only until expiry date'
                     row["appointment_id"]
                     for row in appointments
                     if not self._appointment_is_stamped(row["appointment_id"])
+                    and not self._monthly_stamp_exists(row["appointment_id"])
                 ),
                 None,
             )
             if appointment_id is None:
                 return None
+            appointment_row = next(
+                row for row in appointments
+                if row["appointment_id"] == appointment_id
+            )
+            self._ensure_appointment_qualifies(float(appointment_row["total_price"]))
             if not self._record_stamp_in_transaction(
                 appointment_id,
                 card_code.strip(),
@@ -1453,10 +1645,10 @@ Loyalty cards are valid only until expiry date'
         with self._connection:
             cursor = self._connection.execute(
                 """
-                UPDATE loyalty_cards SET stamps = ?, qr_code_path = ?
+                UPDATE loyalty_cards SET qr_code_path = ?
                 WHERE client_email = ?
                 """,
-                (card.stamps, card.qr_code_path, card.client_email),
+                (card.qr_code_path, card.client_email),
             )
         if cursor.rowcount == 0:
             raise KeyError(f"No loyalty card found for {card.client_email}")
@@ -1507,6 +1699,13 @@ Loyalty cards are valid only until expiry date'
             self._connection.execute(
                 "UPDATE loyalty_cards SET stamps = stamps - 1 WHERE card_code = ?",
                 (latest["card_code"],),
+            )
+            self._connection.execute(
+                """
+                UPDATE loyalty_monthly_stamps SET active = 0
+                WHERE appointment_id = ?
+                """,
+                (appointment_id,),
             )
             self._connection.execute(
                 """
@@ -1569,6 +1768,181 @@ Loyalty cards are valid only until expiry date'
             {"claimed_at": str(row["claimed_at"]), "admin_role": str(row["admin_role"])}
             for row in rows
         ]
+
+    def get_loyalty_prizes(self) -> list[dict[str, object]]:
+        rows = self._connection.execute(
+            """
+            SELECT prize_id, name, milestone, active
+            FROM loyalty_prizes ORDER BY name COLLATE NOCASE, prize_id
+            """
+        ).fetchall()
+        return [
+            {
+                "prize_id": int(row["prize_id"]),
+                "name": str(row["name"]),
+                "milestone": str(row["milestone"]),
+                "active": bool(row["active"]),
+            }
+            for row in rows
+        ]
+
+    def add_loyalty_prize(
+        self, name: str, milestone: str, active: bool, admin_role: str
+    ) -> int:
+        self._require_loyalty_admin(admin_role)
+        normalized_name = self._validate_prize(name, milestone, active)
+        with self._connection:
+            cursor = self._connection.execute(
+                """
+                INSERT INTO loyalty_prizes (name, milestone, active)
+                VALUES (?, ?, ?)
+                """,
+                (normalized_name, milestone, int(active)),
+            )
+        return int(cursor.lastrowid)
+
+    def update_loyalty_prize(
+        self,
+        prize_id: int,
+        name: str,
+        milestone: str,
+        active: bool,
+        admin_role: str,
+    ) -> None:
+        self._require_loyalty_admin(admin_role)
+        normalized_name = self._validate_prize(name, milestone, active)
+        with self._connection:
+            cursor = self._connection.execute(
+                """
+                UPDATE loyalty_prizes SET name = ?, milestone = ?, active = ?
+                WHERE prize_id = ?
+                """,
+                (normalized_name, milestone, int(active), prize_id),
+            )
+        if cursor.rowcount == 0:
+            raise KeyError(f"No loyalty prize found with ID {prize_id}")
+
+    def delete_loyalty_prize(self, prize_id: int, admin_role: str) -> None:
+        self._require_loyalty_admin(admin_role)
+        with self._connection:
+            cursor = self._connection.execute(
+                "DELETE FROM loyalty_prizes WHERE prize_id = ?", (prize_id,)
+            )
+        if cursor.rowcount == 0:
+            raise KeyError(f"No loyalty prize found with ID {prize_id}")
+
+    def get_loyalty_prize_draws(
+        self,
+        client_email: str | None = None,
+        card_month: str | None = None,
+    ) -> list[dict[str, object]]:
+        query = """
+            SELECT draw.draw_id, draw.client_email, client.name AS client_name,
+                   draw.card_month, draw.milestone, draw.status,
+                   draw.prize_name, draw.created_at, draw.drawn_at, draw.given_at
+            FROM loyalty_prize_draws AS draw
+            LEFT JOIN clients AS client ON client.email = draw.client_email
+        """
+        filters: list[str] = []
+        parameters: list[object] = []
+        if client_email is not None:
+            filters.append("draw.client_email = ?")
+            parameters.append(client_email.strip().lower())
+        if card_month is not None:
+            filters.append("draw.card_month = ?")
+            parameters.append(card_month)
+        if filters:
+            query += " WHERE " + " AND ".join(filters)
+        query += " ORDER BY draw.card_month DESC, draw.client_email COLLATE NOCASE, draw.milestone"
+        rows = self._connection.execute(query, parameters).fetchall()
+        return [
+            {
+                "draw_id": int(row["draw_id"]),
+                "client_email": str(row["client_email"]),
+                "client_name": str(row["client_name"] or ""),
+                "card_month": str(row["card_month"]),
+                "milestone": int(row["milestone"]),
+                "status": str(row["status"]),
+                "prize_name": str(row["prize_name"]),
+                "created_at": str(row["created_at"]),
+                "drawn_at": row["drawn_at"],
+                "given_at": row["given_at"],
+            }
+            for row in rows
+        ]
+
+    def draw_loyalty_prize(
+        self, draw_id: int, admin_role: str
+    ) -> dict[str, object]:
+        self._require_loyalty_admin(admin_role)
+        with self._connection:
+            self._connection.execute("BEGIN IMMEDIATE")
+            draw = self._connection.execute(
+                """
+                SELECT milestone, status FROM loyalty_prize_draws
+                WHERE draw_id = ?
+                """,
+                (draw_id,),
+            ).fetchone()
+            if draw is None:
+                raise KeyError(f"No loyalty prize draw found with ID {draw_id}")
+            if draw["status"] != "Pending":
+                raise ValueError("Only pending prize draws can be drawn")
+            prizes = self._connection.execute(
+                """
+                SELECT prize_id, name FROM loyalty_prizes
+                WHERE active = 1 AND milestone IN (?, 'both')
+                ORDER BY prize_id
+                """,
+                (str(draw["milestone"]),),
+            ).fetchall()
+            if not prizes:
+                raise ValueError(
+                    f"No active prizes are available for the {draw['milestone']}th-stamp milestone."
+                )
+            prize = secrets.choice(prizes)
+            self._connection.execute(
+                """
+                UPDATE loyalty_prize_draws
+                SET status = 'Drawn', prize_name = ?, drawn_at = ?
+                WHERE draw_id = ? AND status = 'Pending'
+                """,
+                (prize["name"], datetime.now(timezone.utc).isoformat(), draw_id),
+            )
+        result = next(
+            item for item in self.get_loyalty_prize_draws()
+            if item["draw_id"] == draw_id
+        )
+        return result
+
+    def mark_loyalty_prize_given(self, draw_id: int, admin_role: str) -> None:
+        self._require_loyalty_admin(admin_role)
+        with self._connection:
+            cursor = self._connection.execute(
+                """
+                UPDATE loyalty_prize_draws
+                SET status = 'Given', given_at = ?
+                WHERE draw_id = ? AND status = 'Drawn'
+                """,
+                (datetime.now(timezone.utc).isoformat(), draw_id),
+            )
+        if cursor.rowcount == 0:
+            raise ValueError("Only a drawn prize can be marked as given")
+
+    @staticmethod
+    def _require_loyalty_admin(admin_role: str) -> None:
+        if admin_role != "Admin":
+            raise PermissionError("Only Admin can manage loyalty prizes")
+
+    @staticmethod
+    def _validate_prize(name: str, milestone: str, active: bool) -> str:
+        if not isinstance(name, str) or not name.strip():
+            raise ValueError("Prize name is required")
+        if milestone not in {"5", "10", "both"}:
+            raise ValueError("Prize milestone must be 5, 10, or both")
+        if not isinstance(active, bool):
+            raise TypeError("Prize active state must be a boolean")
+        return name.strip()
 
     def claim_loyalty_reward(self, email: str, admin_role: str) -> LoyaltyCard:
         if admin_role != "Admin":
@@ -1661,7 +2035,8 @@ Loyalty cards are valid only until expiry date'
                    maps_embed_url, map_latitude, map_longitude, map_image_path,
                    loyalty_facebook, loyalty_phone, loyalty_valid_until,
                    loyalty_terms, owner_provider_name, review_url,
-                   online_booking_url
+                   online_booking_url, minimum_spend_per_appointment,
+                   map_link_url
             FROM studio_settings WHERE setting_id = 1
             """
         ).fetchone()
@@ -1685,6 +2060,8 @@ Loyalty cards are valid only until expiry date'
             row["owner_provider_name"],
             row["review_url"],
             row["online_booking_url"],
+            row["minimum_spend_per_appointment"],
+            row["map_link_url"],
         )
 
     def update_studio_settings(self, settings: StudioSettings) -> None:
@@ -1699,8 +2076,9 @@ Loyalty cards are valid only until expiry date'
                      studio_address, maps_embed_url, map_latitude,
                      map_longitude, map_image_path, loyalty_facebook,
                      loyalty_phone, loyalty_valid_until, loyalty_terms,
-                     owner_provider_name, review_url, online_booking_url)
-                VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     owner_provider_name, review_url, online_booking_url,
+                     minimum_spend_per_appointment, map_link_url)
+                VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(setting_id) DO UPDATE SET
                     default_travel_fee = excluded.default_travel_fee,
                     travel_buffer_minutes = excluded.travel_buffer_minutes,
@@ -1718,7 +2096,10 @@ Loyalty cards are valid only until expiry date'
                     loyalty_terms = excluded.loyalty_terms,
                     owner_provider_name = excluded.owner_provider_name,
                     review_url = excluded.review_url,
-                    online_booking_url = excluded.online_booking_url
+                    online_booking_url = excluded.online_booking_url,
+                    minimum_spend_per_appointment =
+                        excluded.minimum_spend_per_appointment,
+                    map_link_url = excluded.map_link_url
                 """,
                 (
                     settings.default_travel_fee,
@@ -1738,6 +2119,8 @@ Loyalty cards are valid only until expiry date'
                     settings.owner_provider_name,
                     settings.review_url,
                     settings.online_booking_url,
+                    settings.minimum_spend_per_appointment,
+                    settings.map_link_url,
                 ),
             )
 
@@ -2044,11 +2427,12 @@ Loyalty cards are valid only until expiry date'
             allow_missing_service_address=True,
         )
 
-    @staticmethod
-    def _loyalty_card_from_row(row: sqlite3.Row) -> LoyaltyCard:
+    def _loyalty_card_from_row(self, row: sqlite3.Row) -> LoyaltyCard:
         return LoyaltyCard(
             row["client_email"],
-            row["stamps"],
+            self._monthly_stamp_count(
+                row["client_email"], date.today().strftime("%Y-%m")
+            ),
             row["qr_code_path"],
             row["card_code"],
             row["view_code"],

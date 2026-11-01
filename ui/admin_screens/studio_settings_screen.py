@@ -84,8 +84,11 @@ class StudioSettingsScreen(BasePage):
         self._owner_provider_name = QLineEdit()
         self._review_url = QLineEdit()
         self._online_booking_url = QLineEdit()
-        self._loyalty_valid_until = QLineEdit()
-        self._loyalty_valid_until.setPlaceholderText("YYYY-MM-DD (optional)")
+        self._map_link_url = QLineEdit()
+        self._minimum_spend_per_appointment = QDoubleSpinBox()
+        self._minimum_spend_per_appointment.setRange(0, 1_000_000)
+        self._minimum_spend_per_appointment.setDecimals(2)
+        self._minimum_spend_per_appointment.setPrefix("P ")
         self._loyalty_terms = QTextEdit()
         self._loyalty_terms.setMaximumHeight(150)
         save_button = QPushButton("Save")
@@ -112,8 +115,12 @@ class StudioSettingsScreen(BasePage):
         form.addRow("Owner / provider name", self._owner_provider_name)
         form.addRow("Review URL (optional)", self._review_url)
         form.addRow("Online booking link (URL)", self._online_booking_url)
+        form.addRow("Map link (URL)", self._map_link_url)
+        form.addRow(
+            "Minimum spend per appointment",
+            self._minimum_spend_per_appointment,
+        )
         form.addRow("Loyalty contact phone", self._loyalty_phone)
-        form.addRow("Loyalty valid until", self._loyalty_valid_until)
         form.addRow("Loyalty terms (one per line)", self._loyalty_terms)
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel("Studio Settings"))
@@ -144,8 +151,11 @@ class StudioSettingsScreen(BasePage):
         self._owner_provider_name.setText(settings.owner_provider_name)
         self._review_url.setText(settings.review_url)
         self._online_booking_url.setText(settings.online_booking_url)
+        self._map_link_url.setText(settings.map_link_url)
+        self._minimum_spend_per_appointment.setValue(
+            settings.minimum_spend_per_appointment
+        )
         self._loyalty_phone.setText(settings.loyalty_phone)
-        self._loyalty_valid_until.setText(settings.loyalty_valid_until)
         self._loyalty_terms.setPlainText(settings.loyalty_terms)
         self._refresh_server_status()
 
@@ -185,11 +195,13 @@ class StudioSettingsScreen(BasePage):
                 self._map_image_path,
                 self._loyalty_facebook.text(),
                 self._loyalty_phone.text(),
-                self._loyalty_valid_until.text(),
+                None,
                 self._loyalty_terms.toPlainText(),
                 self._owner_provider_name.text(),
                 self._review_url.text(),
                 self._online_booking_url.text(),
+                self._minimum_spend_per_appointment.value(),
+                self._map_link_url.text(),
             )
         except (sqlite3.Error, TypeError, ValueError) as error:
             QMessageBox.warning(self, "Invalid studio settings", str(error))

@@ -4,6 +4,7 @@ from PyQt6.QtCore import QTimer, Qt
 from PyQt6.QtGui import QPixmap
 from PyQt6.QtWidgets import (
     QCheckBox,
+    QComboBox,
     QDialog,
     QDialogButtonBox,
     QFormLayout,
@@ -16,9 +17,9 @@ from PyQt6.QtWidgets import (
     QListWidget,
     QMessageBox,
     QPushButton,
-    QSpinBox,
     QTableWidget,
     QTableWidgetItem,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -55,6 +56,42 @@ class StampReversalDialog(ScrollableDialog):
         self.set_dialog_layout(form, footer)
 
 
+class PrizeDialog(QDialog):
+    def __init__(
+        self,
+        parent: QWidget | None = None,
+        prize: dict[str, object] | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Edit prize" if prize else "Add prize")
+        self.name_input = QLineEdit()
+        self.milestone_input = QComboBox()
+        self.milestone_input.addItem("5th stamp", "5")
+        self.milestone_input.addItem("10th stamp", "10")
+        self.milestone_input.addItem("Both", "both")
+        self.active_input = QCheckBox("Active")
+        self.active_input.setChecked(True)
+        if prize is not None:
+            self.name_input.setText(str(prize["name"]))
+            self.milestone_input.setCurrentIndex(
+                self.milestone_input.findData(prize["milestone"])
+            )
+            self.active_input.setChecked(bool(prize["active"]))
+        form = QFormLayout()
+        form.addRow("Prize name", self.name_input)
+        form.addRow("Milestone", self.milestone_input)
+        form.addRow(self.active_input)
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Save
+            | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout = QVBoxLayout(self)
+        layout.addLayout(form)
+        layout.addWidget(buttons)
+
+
 class LoyaltyCardScreen(BasePage):
     """Admin controls for stamping and claiming in-person loyalty rewards."""
 
@@ -83,9 +120,9 @@ class LoyaltyCardScreen(BasePage):
         self._search_box.setPlaceholderText("Search name or email")
         self._search_box.textChanged.connect(lambda _text: self._populate_table())
 
-        self._client_table = QTableWidget(0, 4)
+        self._client_table = QTableWidget(0, 3)
         self._client_table.setHorizontalHeaderLabels(
-            ["Name", "Email", "Stamps", "Reward"]
+            ["Name", "Email", "This month's stamps"]
         )
         self._client_table.setSelectionBehavior(
             QTableWidget.SelectionBehavior.SelectRows
@@ -97,19 +134,14 @@ class LoyaltyCardScreen(BasePage):
         client_header.setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
         client_header.setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
         client_header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
-        client_header.setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
         self._client_table.setColumnWidth(0, 150)
         self._client_table.setColumnWidth(1, 220)
-        self._client_table.setColumnWidth(3, 140)
         self._client_table.setStyleSheet(
             "QTableWidget::item:selected { "
             "background-color: #f8e5e3; color: #3f3437; }"
         )
         self._client_table.itemSelectionChanged.connect(self._update_selection)
 
-        self._claim_button = QPushButton("Mark reward claimed")
-        self._claim_button.clicked.connect(self.mark_reward_claimed)
-        self._claim_button.setEnabled(False)
         self._copy_card_link_button = QPushButton("Copy card link")
         self._copy_card_link_button.clicked.connect(self.copy_card_link)
         self._copy_card_link_button.setEnabled(False)
@@ -118,7 +150,6 @@ class LoyaltyCardScreen(BasePage):
         self._reverse_stamp_button.setEnabled(False)
 
         action_row = QHBoxLayout()
-        action_row.addWidget(self._claim_button)
         action_row.addWidget(self._copy_card_link_button)
         action_row.addWidget(self._reverse_stamp_button)
         action_row.addStretch()
@@ -137,16 +168,6 @@ class LoyaltyCardScreen(BasePage):
         qr_box = QGroupBox("QR Card Preview")
         qr_layout = QVBoxLayout(qr_box)
         qr_layout.addWidget(self._qr_preview)
-
-        self._stamps_required = QSpinBox()
-        self._stamps_required.setRange(1, 1_000_000)
-        save_settings = QPushButton("Save")
-        save_settings.clicked.connect(self.save_settings)
-        settings_row = QHBoxLayout()
-        settings_row.addWidget(QLabel("Stamps needed for a reward"))
-        settings_row.addWidget(self._stamps_required)
-        settings_row.addWidget(save_settings)
-        settings_row.addStretch()
 
         content = QHBoxLayout()
         content.addWidget(clients_box, 3)
@@ -188,11 +209,77 @@ class LoyaltyCardScreen(BasePage):
         history_row.addWidget(stamp_history_box, 2)
         history_row.addWidget(claim_history_box, 1)
 
+        self._tabs = QTabWidget()
+        cards_tab = QWidget()
+        cards_layout = QVBoxLayout(cards_tab)
+        cards_layout.addLayout(content, 1)
+        cards_layout.addLayout(history_row, 1)
+        self._tabs.addTab(cards_tab, "Cards")
+        self._build_prizes_tab()
         layout = QVBoxLayout(self)
-        layout.addLayout(content, 1)
-        layout.addLayout(history_row, 1)
-        layout.addLayout(settings_row)
+        layout.addWidget(self._tabs)
         self._resize_client_table_columns()
+
+    def _build_prizes_tab(self) -> None:
+        self._prize_table = QTableWidget(0, 3)
+        self._prize_table.setHorizontalHeaderLabels(
+            ["Prize", "Milestone", "Active"]
+        )
+        self._prize_table.setSelectionBehavior(
+            QTableWidget.SelectionBehavior.SelectRows
+        )
+        self._prize_table.setSelectionMode(
+            QTableWidget.SelectionMode.SingleSelection
+        )
+        self._prize_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self._prize_table.itemSelectionChanged.connect(
+            self._update_prize_actions
+        )
+        self._add_prize_button = QPushButton("Add")
+        self._add_prize_button.clicked.connect(self.add_prize)
+        self._edit_prize_button = QPushButton("Edit")
+        self._edit_prize_button.clicked.connect(self.edit_prize)
+        self._remove_prize_button = QPushButton("Remove")
+        self._remove_prize_button.clicked.connect(self.remove_prize)
+        self._edit_prize_button.setEnabled(False)
+        self._remove_prize_button.setEnabled(False)
+        prize_actions = QHBoxLayout()
+        prize_actions.addWidget(self._add_prize_button)
+        prize_actions.addWidget(self._edit_prize_button)
+        prize_actions.addWidget(self._remove_prize_button)
+        prize_actions.addStretch()
+
+        self._draw_table = QTableWidget(0, 5)
+        self._draw_table.setHorizontalHeaderLabels(
+            ["Client", "Card month", "Milestone", "Prize", "Status"]
+        )
+        self._draw_table.setSelectionBehavior(
+            QTableWidget.SelectionBehavior.SelectRows
+        )
+        self._draw_table.setSelectionMode(
+            QTableWidget.SelectionMode.SingleSelection
+        )
+        self._draw_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self._draw_table.itemSelectionChanged.connect(self._update_draw_actions)
+        self._draw_prize_button = QPushButton("Draw prize")
+        self._draw_prize_button.clicked.connect(self.draw_prize)
+        self._mark_given_button = QPushButton("Mark prize given")
+        self._mark_given_button.clicked.connect(self.mark_prize_given)
+        self._draw_prize_button.setEnabled(False)
+        self._mark_given_button.setEnabled(False)
+        draw_actions = QHBoxLayout()
+        draw_actions.addWidget(self._draw_prize_button)
+        draw_actions.addWidget(self._mark_given_button)
+        draw_actions.addStretch()
+        prizes_tab = QWidget()
+        prizes_layout = QVBoxLayout(prizes_tab)
+        prizes_layout.addWidget(QLabel("Prize list"))
+        prizes_layout.addWidget(self._prize_table, 1)
+        prizes_layout.addLayout(prize_actions)
+        prizes_layout.addWidget(QLabel("Prize draw entries"))
+        prizes_layout.addWidget(self._draw_table, 1)
+        prizes_layout.addLayout(draw_actions)
+        self._tabs.addTab(prizes_tab, "Prizes")
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
@@ -206,9 +293,8 @@ class LoyaltyCardScreen(BasePage):
         available = (
             table.viewport().width()
             - header.sectionSize(2)
-            - header.sectionSize(3)
         )
-        email_width = max(220, round(available * 220 / 370))
+        email_width = max(220, round(available * 0.38))
         name_width = max(150, available - email_width)
         table.setColumnWidth(0, name_width)
         table.setColumnWidth(1, email_width)
@@ -226,49 +312,171 @@ class LoyaltyCardScreen(BasePage):
                         client.email
                     )
             self._cards_by_email = cards_by_email
-            required = self._loyalty_manager.get_stamps_required()
+            prizes = self._loyalty_manager.get_prizes()
+            draws = self._loyalty_manager.get_prize_draws()
         except (sqlite3.Error, ValueError, TypeError) as error:
             self._show_error("Could not load loyalty cards", error)
             return
-        self._stamps_required.setValue(required)
         self._populate_table(selected_email)
+        self._populate_prizes(prizes)
+        self._populate_draws(draws)
 
-    def mark_reward_claimed(self) -> None:
-        email = self._selected_email()
-        if email is None:
-            return
-        try:
-            ready = self._loyalty_manager.is_reward_ready(email)
-        except (ValueError, TypeError, sqlite3.Error) as error:
-            self._show_error("Could not check reward status", error)
-            return
-        if not ready:
-            QMessageBox.information(
-                self, "Reward not ready", "This client has not earned a reward yet."
+    def _populate_prizes(self, prizes: list[dict[str, object]]) -> None:
+        self._prize_table.setRowCount(0)
+        milestone_labels = {
+            "5": "5th stamp",
+            "10": "10th stamp",
+            "both": "Both",
+        }
+        for prize in prizes:
+            row = self._prize_table.rowCount()
+            self._prize_table.insertRow(row)
+            name_item = QTableWidgetItem(str(prize["name"]))
+            name_item.setData(Qt.ItemDataRole.UserRole, prize["prize_id"])
+            self._prize_table.setItem(row, 0, name_item)
+            self._prize_table.setItem(
+                row,
+                1,
+                QTableWidgetItem(milestone_labels[str(prize["milestone"])]),
             )
+            self._prize_table.setItem(
+                row, 2, QTableWidgetItem("Yes" if prize["active"] else "No")
+            )
+        self._update_prize_actions()
+
+    def _populate_draws(self, draws: list[dict[str, object]]) -> None:
+        self._draw_table.setRowCount(0)
+        for draw in draws:
+            row = self._draw_table.rowCount()
+            self._draw_table.insertRow(row)
+            client_item = QTableWidgetItem(str(draw["client_name"]))
+            client_item.setData(Qt.ItemDataRole.UserRole, draw["draw_id"])
+            client_item.setToolTip(str(draw["client_email"]))
+            self._draw_table.setItem(row, 0, client_item)
+            self._draw_table.setItem(
+                row, 1, QTableWidgetItem(str(draw["card_month"]))
+            )
+            self._draw_table.setItem(
+                row, 2, QTableWidgetItem(f"{draw['milestone']}th stamp")
+            )
+            self._draw_table.setItem(
+                row, 3, QTableWidgetItem(str(draw["prize_name"]))
+            )
+            self._draw_table.setItem(
+                row, 4, QTableWidgetItem(str(draw["status"]))
+            )
+        self._update_draw_actions()
+
+    def _selected_prize(self) -> tuple[int, dict[str, object]] | None:
+        row = self._prize_table.currentRow()
+        if row < 0:
+            return None
+        item = self._prize_table.item(row, 0)
+        if item is None:
+            return None
+        prize_id = item.data(Qt.ItemDataRole.UserRole)
+        if not isinstance(prize_id, int):
+            return None
+        prize = next(
+            (
+                item for item in self._loyalty_manager.get_prizes()
+                if item["prize_id"] == prize_id
+            ),
+            None,
+        )
+        return (prize_id, prize) if prize is not None else None
+
+    def _selected_draw_id(self) -> int | None:
+        row = self._draw_table.currentRow()
+        item = self._draw_table.item(row, 0) if row >= 0 else None
+        draw_id = item.data(Qt.ItemDataRole.UserRole) if item else None
+        return draw_id if isinstance(draw_id, int) else None
+
+    def _update_prize_actions(self) -> None:
+        selected = self._selected_prize()
+        self._edit_prize_button.setEnabled(selected is not None)
+        self._remove_prize_button.setEnabled(selected is not None)
+
+    def _update_draw_actions(self) -> None:
+        row = self._draw_table.currentRow()
+        status_item = self._draw_table.item(row, 4) if row >= 0 else None
+        status = status_item.text() if status_item is not None else ""
+        self._draw_prize_button.setEnabled(status == "Pending")
+        self._mark_given_button.setEnabled(status == "Drawn")
+
+    def add_prize(self) -> None:
+        dialog = PrizeDialog(self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        self._save_prize(None, dialog)
+
+    def edit_prize(self) -> None:
+        selected = self._selected_prize()
+        if selected is None:
+            return
+        dialog = PrizeDialog(self, selected[1])
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        self._save_prize(selected[0], dialog)
+
+    def _save_prize(self, prize_id: int | None, dialog: PrizeDialog) -> None:
+        name = dialog.name_input.text()
+        milestone = str(dialog.milestone_input.currentData())
+        active = dialog.active_input.isChecked()
+        try:
+            if prize_id is None:
+                self._loyalty_manager.add_prize(name, milestone, active, "Admin")
+            else:
+                self._loyalty_manager.update_prize(
+                    prize_id, name, milestone, active, "Admin"
+                )
+        except (PermissionError, sqlite3.Error, TypeError, ValueError, KeyError) as error:
+            self._show_error("Could not save prize", error)
+            return
+        self.refresh()
+
+    def remove_prize(self) -> None:
+        selected = self._selected_prize()
+        if selected is None:
             return
         answer = QMessageBox.question(
             self,
-            "Mark reward claimed",
-            "Confirm that this client claimed their reward at the salon?",
+            "Remove prize",
+            f"Remove {selected[1]['name']} from the active prize list?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
         if answer != QMessageBox.StandardButton.Yes:
             return
         try:
-            self._loyalty_manager.claim_reward(email, "Admin")
-        except (ValueError, TypeError, sqlite3.Error) as error:
-            self._show_error("Could not claim reward", error)
+            self._loyalty_manager.remove_prize(selected[0], "Admin")
+        except (PermissionError, sqlite3.Error, KeyError) as error:
+            self._show_error("Could not remove prize", error)
             return
         self.refresh()
-        self._select_email(email)
 
-    def save_settings(self) -> None:
+    def draw_prize(self) -> None:
+        draw_id = self._selected_draw_id()
+        if draw_id is None:
+            return
         try:
-            self._loyalty_manager.set_stamps_required(self._stamps_required.value())
-        except (ValueError, TypeError, sqlite3.Error) as error:
-            self._show_error("Could not save loyalty settings", error)
+            draw = self._loyalty_manager.draw_prize(draw_id, "Admin")
+        except (PermissionError, sqlite3.Error, ValueError, KeyError) as error:
+            QMessageBox.warning(self, "Could not draw prize", str(error))
+            return
+        QMessageBox.information(
+            self, "Prize drawn", f"Prize: {draw['prize_name']}"
+        )
+        self.refresh()
+
+    def mark_prize_given(self) -> None:
+        draw_id = self._selected_draw_id()
+        if draw_id is None:
+            return
+        try:
+            self._loyalty_manager.mark_prize_given(draw_id, "Admin")
+        except (PermissionError, sqlite3.Error, ValueError, KeyError) as error:
+            self._show_error("Could not mark prize given", error)
             return
         self.refresh()
 
@@ -343,7 +551,6 @@ class LoyaltyCardScreen(BasePage):
             or query in client.name.casefold()
             or query in client.email.casefold()
         ]
-        required = self._loyalty_manager.get_stamps_required()
         self._client_table.setRowCount(0)
         selected_found = False
         for client in clients:
@@ -358,16 +565,7 @@ class LoyaltyCardScreen(BasePage):
             email_item.setToolTip(client.email)
             self._client_table.setItem(row, 1, email_item)
             self._client_table.setItem(
-                row, 2, QTableWidgetItem(f"{card.stamps} / {required}")
-            )
-            self._client_table.setItem(
-                row,
-                3,
-                QTableWidgetItem(
-                    "Reward ready"
-                    if card.is_reward_ready(required)
-                    else ""
-                ),
+                row, 2, QTableWidgetItem(f"{card.stamps} / 10")
             )
             if client.email == selected_email:
                 self._client_table.selectRow(row)
@@ -375,7 +573,6 @@ class LoyaltyCardScreen(BasePage):
         if not selected_found:
             self._qr_preview.setPixmap(QPixmap())
             self._qr_preview.setText("Select a client to preview their QR card.")
-            self._claim_button.setEnabled(False)
             self._copy_card_link_button.setEnabled(False)
             self._reverse_stamp_button.setEnabled(False)
             self._stamp_history.setRowCount(0)
@@ -386,7 +583,6 @@ class LoyaltyCardScreen(BasePage):
     def _update_selection(self) -> None:
         email = self._selected_email()
         if email is None:
-            self._claim_button.setEnabled(False)
             self._copy_card_link_button.setEnabled(False)
             self._reverse_stamp_button.setEnabled(False)
             self._stamp_history.setRowCount(0)
@@ -399,7 +595,6 @@ class LoyaltyCardScreen(BasePage):
         self._copy_card_link_button.setEnabled(False)
         try:
             card = self._loyalty_manager.get_card(email)
-            ready = self._loyalty_manager.is_reward_ready(email)
             stamp_history = self._loyalty_manager.get_stamp_history(email)
             claim_history = self._loyalty_manager.get_reward_claim_history(email)
             if card is None:
@@ -411,7 +606,6 @@ class LoyaltyCardScreen(BasePage):
         except (ValueError, TypeError, sqlite3.Error, RuntimeError) as error:
             self._show_error("Could not load QR card", error)
             return
-        self._claim_button.setEnabled(ready)
         self._populate_history(stamp_history, claim_history)
         self._update_reverse_button()
         if pixmap.isNull():

@@ -20,8 +20,8 @@ from services.studio_settings_manager import StudioSettingsManager
 
 class MockEmailSender(NotificationService):
     def __init__(self) -> None:
-        self.booking: list[tuple[str, str, str, datetime, str]] = []
-        self.reminders: list[tuple[str, str, str, datetime, str, int]] = []
+        self.booking: list[tuple[str, str, str, datetime, str, str]] = []
+        self.reminders: list[tuple[str, str, str, datetime, str, int, str]] = []
         self.thank_you: list[tuple[str, str, str, datetime]] = []
         self.status: list[tuple[str, str]] = []
 
@@ -39,9 +39,17 @@ class MockEmailSender(NotificationService):
         _review_url: str = "",
         _duration_minutes: int = 120,
         online_booking_url: str = "",
+        map_link_url: str = "",
     ) -> None:
         self.booking.append(
-            (email, first_name, service_name, appointment_time, online_booking_url)
+            (
+                email,
+                first_name,
+                service_name,
+                appointment_time,
+                online_booking_url,
+                map_link_url,
+            )
         )
 
     def send_appointment_reminder(
@@ -59,6 +67,7 @@ class MockEmailSender(NotificationService):
         _duration_minutes: int = 120,
         online_booking_url: str = "",
         calendar_sequence: int = 0,
+        map_link_url: str = "",
     ) -> None:
         self.reminders.append(
             (
@@ -68,6 +77,7 @@ class MockEmailSender(NotificationService):
                 appointment_time,
                 online_booking_url,
                 calendar_sequence,
+                map_link_url,
             )
         )
 
@@ -149,6 +159,7 @@ class AppointmentEmailFlowTests(unittest.TestCase):
             settings.travel_buffer_minutes,
             settings.service_area_note,
             online_booking_url="https://booking.example.test/",
+            map_link_url="https://maps.example.test/studio",
         )
         appointment = self.manager.create_appointment(
             self.email,
@@ -165,6 +176,9 @@ class AppointmentEmailFlowTests(unittest.TestCase):
         )
         self.assertEqual(
             self.sender.booking[0][4], "https://booking.example.test/"
+        )
+        self.assertEqual(
+            self.sender.booking[0][5], "https://maps.example.test/studio"
         )
         appointment_id = self._id(appointment)
         self.manager._send_booking_email(appointment)
@@ -456,18 +470,21 @@ class AppointmentEmailFlowTests(unittest.TestCase):
             self.assertEqual(settings.owner_provider_name, "Nicole Pearl Millari Teodoro")
             self.assertEqual(settings.review_url, "")
             self.assertEqual(settings.online_booking_url, "")
+            self.assertEqual(settings.map_link_url, "")
             self.assertEqual(settings.service_area_note, "Keep existing settings")
 
             old_database._connection.execute(
                 """
                 UPDATE studio_settings
-                SET owner_provider_name = ?, review_url = ?, online_booking_url = ?
+                SET owner_provider_name = ?, review_url = ?, online_booking_url = ?,
+                    map_link_url = ?
                 WHERE setting_id = 1
                 """,
                 (
                     "Admin-entered name",
                     "https://reviews.example.test/",
                     "https://booking.example.test/",
+                    "https://maps.example.test/legacy",
                 ),
             )
             old_database.initialize_schema()
@@ -476,6 +493,9 @@ class AppointmentEmailFlowTests(unittest.TestCase):
             self.assertEqual(migrated.review_url, "https://reviews.example.test/")
             self.assertEqual(
                 migrated.online_booking_url, "https://booking.example.test/"
+            )
+            self.assertEqual(
+                migrated.map_link_url, "https://maps.example.test/legacy"
             )
 
             old_database._connection.execute(
@@ -726,6 +746,61 @@ class AppointmentEmailFlowTests(unittest.TestCase):
                     self.assertIn(expected_href, html_body)
                 self.assertIn("font-size:15px", html_body)
                 self.assertIn("font-size:14px", html_body)
+
+    def test_map_link_overrides_address_with_safe_fallbacks(self) -> None:
+        cases = (
+            (
+                "https://maps.example.test/studio?a=1&b=2",
+                "12 Rose Street, Pila",
+                'href="https://maps.example.test/studio?a=1&amp;b=2"',
+            ),
+            (
+                "https://maps.example.test/studio",
+                "",
+                'href="https://maps.example.test/studio"',
+            ),
+            (
+                "",
+                "12 Rose Street, Pila",
+                "https://www.google.com/maps/search/?api=1&amp;query="
+                "12%20Rose%20Street%2C%20Pila",
+            ),
+            ("javascript:alert(1)", "", None),
+            ("", "", None),
+        )
+        for map_link_url, studio_address, expected_link in cases:
+            with self.subTest(map_link_url=map_link_url, studio_address=studio_address):
+                with patch.object(NotificationService, "_send_message") as sender:
+                    NotificationService().send_booking_received(
+                        self.email,
+                        "Taylor",
+                        "Test Manicure",
+                        datetime(2026, 11, 1, 13, 30),
+                        42,
+                        studio_address,
+                        map_link_url=map_link_url,
+                    )
+
+                html_body = sender.call_args.args[3]
+                if expected_link is None:
+                    self.assertNotIn("Get Directions", html_body)
+                else:
+                    self.assertIn("Get Directions", html_body)
+                    self.assertIn(expected_link, html_body)
+                if map_link_url:
+                    self.assertNotIn(
+                        "https://www.google.com/maps/search/", html_body
+                    )
+
+    def test_map_link_settings_reject_non_http_urls(self) -> None:
+        settings = self.database.get_studio_settings()
+        with self.assertRaisesRegex(ValueError, "must start with http:// or https://"):
+            StudioSettingsManager(self.database).update_settings(
+                settings.default_travel_fee,
+                settings.travel_buffer_minutes,
+                settings.service_area_note,
+                map_link_url="javascript:alert(1)",
+            )
 
     def test_special_characters_are_escaped_in_html(self) -> None:
         with patch.object(NotificationService, "_send_message") as send_message:

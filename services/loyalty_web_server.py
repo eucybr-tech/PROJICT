@@ -1,4 +1,5 @@
 import base64
+import calendar
 import html
 import mimetypes
 import re
@@ -206,12 +207,15 @@ class LoyaltyWebServer:
                 if database is None:
                     self._send(503, "text/plain; charset=utf-8", "Service unavailable")
                     return
-                card = database.get_web_card(view_code)
+                current_date = date.today()
+                card = database.get_web_card(view_code, current_date)
                 if card is None:
                     self._send(404, "text/plain; charset=utf-8", "Not found")
                     return
                 html_page = owner._card_page(
-                    *card, settings=database.get_studio_settings()
+                    *card,
+                    settings=database.get_studio_settings(),
+                    today=current_date,
                 )
                 self._send(200, "text/html; charset=utf-8", html_page)
 
@@ -219,6 +223,7 @@ class LoyaltyWebServer:
                 messages = {
                     "used": "This stamp link was already used",
                     "expired": "This stamp link has expired",
+                    "not_qualified": "This appointment does not qualify for a stamp.",
                     "invalid": "This stamp link is invalid",
                     "failure": (
                         "Stamp could not be recorded. No stamp was added. "
@@ -264,16 +269,18 @@ class LoyaltyWebServer:
         self,
         full_name: str,
         stamps: int,
+        prize_draws: list[dict[str, object]] | None = None,
+        expired: bool = False,
         settings: StudioSettings | None = None,
+        today: date | None = None,
     ) -> str:
         settings = settings or StudioSettings()
+        current_date = today or date.today()
         first_name = html.escape(
             full_name.split(maxsplit=1)[0] if full_name else "Customer"
         )
         safe_salon_name = html.escape(self._salon_name)
         safe_logo_data = html.escape(self._logo_data_uri(), quote=True)
-        safe_facebook = html.escape(settings.loyalty_facebook)
-        safe_phone = html.escape(settings.loyalty_phone)
         filled = min(max(stamps, 0), 10)
         circles: list[str] = []
         gift_icon = (
@@ -296,26 +303,28 @@ class LoyaltyWebServer:
                 f'{"Earned" if earned else "Not yet earned"} stamp'
                 f'{" and prize draw" if reward_stamp else ""}">{content}</span>'
             )
-        reward_message = (
-            '<p class="prize">Prize draw earned!</p>'
-            if filled >= 5
-            else ""
-        )
-        valid_until = settings.loyalty_valid_until
-        validity_message = ""
-        if valid_until:
-            safe_valid_until = html.escape(valid_until)
-            expired = date.fromisoformat(valid_until) < date.today()
-            validity_message = (
-                f'<p class="validity{" expired" if expired else ""}">'
-                f'{"Card expired" if expired else "Valid until: " + safe_valid_until}'
-                "</p>"
+        reward_lines: list[str] = []
+        for draw in prize_draws or []:
+            if draw["status"] == "Pending":
+                reward_lines.append(
+                    '<p class="prize">You earned a prize draw!</p>'
+                )
+            elif draw["status"] in {"Drawn", "Given"} and draw["prize_name"]:
+                reward_lines.append(
+                    f'<p class="prize">{html.escape(str(draw["prize_name"]))}</p>'
+                )
+        reward_message = "".join(reward_lines)
+        last_day = calendar.monthrange(current_date.year, current_date.month)[1]
+        valid_until = date(current_date.year, current_date.month, last_day)
+        validity_message = (
+            '<p class="validity expired">Expired</p>'
+            if expired
+            else (
+                f'<p class="validity">Valid until '
+                f'{valid_until.strftime("%B %d, %Y")}</p>'
             )
-        safe_count = html.escape(f"{filled} of 10")
-        contact_line = (
-            f'<p class="contact">Facebook: {safe_facebook} '
-            f'&nbsp;|&nbsp; Phone: {safe_phone}</p>'
         )
+        safe_count = html.escape(f"{filled} of 10")
         page = f"""<!doctype html>
 <html lang="en">
 <head>
@@ -329,7 +338,6 @@ body {{ margin: 0; padding: 16px; background: #fff7f8; color: #49343d; font-fami
 main {{ width: 100%; max-width: 390px; margin: 0 auto; padding: 20px 16px; background: #fff; border-radius: 20px; box-shadow: 0 8px 30px #6c40521a; text-align: center; }}
 img {{ width: 76px; height: 76px; object-fit: cover; border-radius: 50%; }}
 h1 {{ margin: 10px 0 3px; font-size: 1.75rem; line-height: 1.15; font-weight: 700; }}
-.contact {{ margin: 4px 0 18px; font-size: .9rem; line-height: 1.4; overflow-wrap: anywhere; }}
 .grid {{ display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px 6px; margin: 18px auto 12px; max-width: 330px; }}
 .stamp {{ display: flex; align-items: center; justify-content: center; width: 46px; height: 46px; border: 3px dotted #d8c5cf; border-radius: 50%; margin: auto; color: #fff; font-size: 1.5rem; font-weight: 700; }}
 .stamp.earned {{ background: #c8799d; border: 3px solid #c8799d; }}
@@ -345,7 +353,6 @@ h1 {{ margin: 10px 0 3px; font-size: 1.75rem; line-height: 1.15; font-weight: 70
 <body><main>
 <img src="{safe_logo_data}" alt="{safe_salon_name} logo">
 <h1>LOYALTY CARD</h1>
-{contact_line}
 <div class="grid" aria-label="Ten loyalty stamps">{''.join(circles)}</div>
 <p class="count">{safe_count}</p>
 {reward_message}

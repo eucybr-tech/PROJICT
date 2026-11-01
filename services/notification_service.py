@@ -52,6 +52,7 @@ class NotificationService:
         review_url: str = "",
         duration_minutes: int = 120,
         online_booking_url: str = "",
+        map_link_url: str = "",
     ) -> None:
         self._send_appointment_email(
             email,
@@ -69,6 +70,7 @@ class NotificationService:
             review_url,
             duration_minutes,
             online_booking_url,
+            map_link_url=map_link_url,
         )
 
     def send_appointment_reminder(
@@ -86,6 +88,7 @@ class NotificationService:
         duration_minutes: int = 120,
         online_booking_url: str = "",
         calendar_sequence: int = 0,
+        map_link_url: str = "",
     ) -> None:
         self._send_appointment_email(
             email,
@@ -105,6 +108,7 @@ class NotificationService:
             online_booking_url,
             include_calendar=True,
             calendar_sequence=calendar_sequence,
+            map_link_url=map_link_url,
         )
 
     def send_appointment_thank_you(
@@ -121,6 +125,7 @@ class NotificationService:
         review_url: str = "",
         duration_minutes: int = 120,
         online_booking_url: str = "",
+        map_link_url: str = "",
     ) -> None:
         self._send_appointment_email(
             email,
@@ -138,6 +143,7 @@ class NotificationService:
             review_url,
             duration_minutes,
             online_booking_url,
+            map_link_url=map_link_url,
         )
 
     def send_appointment_status(
@@ -155,6 +161,7 @@ class NotificationService:
         review_url: str = "",
         duration_minutes: int = 120,
         online_booking_url: str = "",
+        map_link_url: str = "",
     ) -> None:
         try:
             subject, heading, body = self._APPOINTMENT_STATES[status]
@@ -177,6 +184,7 @@ class NotificationService:
             duration_minutes,
             online_booking_url,
             include_calendar=status == "confirmed",
+            map_link_url=map_link_url,
         )
 
     def _send_appointment_email(
@@ -198,14 +206,18 @@ class NotificationService:
         online_booking_url: str,
         include_calendar: bool = False,
         calendar_sequence: int = 0,
+        map_link_url: str = "",
     ) -> None:
         when = appointment_time.strftime("%A, %B %d, %Y at %I:%M %p")
         reference = f"PS-{appointment_id:06d}"
-        directions_url = (
+        address_directions_url = (
             "https://www.google.com/maps/search/?api=1&query="
             f"{quote(studio_address, safe='')}"
             if studio_address.strip()
             else ""
+        )
+        directions_url = (
+            self._validated_http_url(map_link_url) or address_directions_url
         )
         logo_content = self._read_logo()
         calendar_content = (
@@ -291,6 +303,7 @@ class NotificationService:
         ]
         if studio_address.strip():
             lines.append(studio_address)
+        if directions_url:
             lines.append(f"Get Directions: {directions_url}")
         if studio_phone.strip():
             lines.append(f"Phone: {studio_phone}")
@@ -330,9 +343,13 @@ class NotificationService:
         )
         address = (
             f'<p style="margin:0 0 12px;color:#62545a;">{escape(studio_address)}</p>'
+            if studio_address.strip()
+            else ""
+        )
+        directions = (
             f'<p style="margin:0 0 16px;"><a href="{escape(directions_url)}" '
             'style="color:#a94f78;text-decoration:underline;">Get Directions</a></p>'
-            if studio_address.strip()
+            if directions_url
             else ""
         )
         phone = (
@@ -425,6 +442,7 @@ background-color:#fffafd;text-align:center;">
 <h2 style="margin:0 0 14px;color:#a94f78;font-size:18px;">
 {escape(cls._STUDIO_NAME)}</h2>
 {address}
+{directions}
 {phone}
 {side_panel_link}
 {review}
@@ -610,6 +628,7 @@ background-color:#fffafd;text-align:center;">
         review_url: str = "",
         duration_minutes: int = 120,
         online_booking_url: str = "",
+        map_link_url: str = "",
     ) -> threading.Thread:
         def send() -> None:
             try:
@@ -627,6 +646,7 @@ background-color:#fffafd;text-align:center;">
                     review_url,
                     duration_minutes,
                     online_booking_url,
+                    map_link_url=map_link_url,
                 )
             except Exception as error:
                 _LOGGER.exception(

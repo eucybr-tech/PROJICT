@@ -44,6 +44,8 @@ class StudioSettings:
         owner_provider_name: str = _DEFAULT_OWNER_PROVIDER_NAME,
         review_url: str = "",
         online_booking_url: str = "",
+        minimum_spend_per_appointment: int | float = 500,
+        map_link_url: str = "",
     ) -> None:
         self._default_travel_fee = validate_nonnegative_number(
             default_travel_fee, "default_travel_fee"
@@ -92,6 +94,14 @@ class StudioSettings:
         self._review_url = self._validate_map_text(review_url, "review_url")
         self._online_booking_url = self._validate_map_text(
             online_booking_url, "online_booking_url"
+        )
+        self._map_link_url = self._validate_map_text(map_link_url, "map_link_url")
+        if self._map_link_url and not self._map_link_url.startswith(
+            ("http://", "https://")
+        ):
+            raise ValueError("Map link must start with http:// or https://")
+        self._minimum_spend_per_appointment = validate_nonnegative_number(
+            minimum_spend_per_appointment, "minimum_spend_per_appointment"
         )
         self._loyalty_valid_until = self._validate_valid_until(
             loyalty_valid_until
@@ -237,3 +247,11 @@ class StudioSettings:
     @property
     def online_booking_url(self) -> str:
         return self._online_booking_url
+
+    @property
+    def minimum_spend_per_appointment(self) -> float:
+        return self._minimum_spend_per_appointment
+
+    @property
+    def map_link_url(self) -> str:
+        return self._map_link_url

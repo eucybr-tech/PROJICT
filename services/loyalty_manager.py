@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from database import Database
+from database.database import StampNotQualifiedError
 from models import LoyaltyCard, LoyaltySettings
 
 
@@ -61,17 +62,33 @@ class LoyaltyManager:
     ) -> LoyaltyCard | None:
         if not isinstance(card_code, str) or not card_code.strip():
             return None
-        return self._database.award_next_unstamped_completed_visit(
-            card_code.strip(), admin_role
-        )
+        try:
+            return self._database.award_next_unstamped_completed_visit(
+                card_code.strip(), admin_role
+            )
+        except StampNotQualifiedError as error:
+            if admin_role == "Admin":
+                raise
+            raise ValueError(
+                "This appointment does not qualify for a stamp."
+            ) from error
 
     def get_clients(self):
         return self._database.get_clients()
 
-    def create_stamp_token(self, appointment_id: int) -> str:
+    def create_stamp_token(
+        self, appointment_id: int, admin_role: str = "Admin"
+    ) -> str:
         if isinstance(appointment_id, bool) or not isinstance(appointment_id, int):
             raise TypeError("appointment_id must be an integer")
-        return self._database.create_stamp_token(appointment_id)
+        try:
+            return self._database.create_stamp_token(appointment_id)
+        except StampNotQualifiedError as error:
+            if admin_role == "Admin":
+                raise
+            raise ValueError(
+                "This appointment does not qualify for a stamp."
+            ) from error
 
     def has_stamp_for_appointment(self, appointment_id: int) -> bool:
         return self._database.has_loyalty_stamp_for_appointment(appointment_id)
@@ -126,7 +143,7 @@ class LoyaltyManager:
         return str(path)
 
     def get_stamps_required(self) -> int:
-        return self._database.get_loyalty_settings().get_stamps_required()
+        return 10
 
     def set_stamps_required(self, value: int) -> None:
         settings = LoyaltySettings(value)
@@ -135,6 +152,47 @@ class LoyaltyManager:
     def is_reward_ready(self, email: str) -> bool:
         card = self.get_card(email)
         return card is not None and card.is_reward_ready(self.get_stamps_required())
+
+    def get_minimum_spend_per_appointment(self) -> float:
+        return self._database.get_minimum_spend_per_appointment()
+
+    def get_prizes(self) -> list[dict[str, object]]:
+        return self._database.get_loyalty_prizes()
+
+    def add_prize(
+        self, name: str, milestone: str, active: bool, admin_role: str
+    ) -> int:
+        return self._database.add_loyalty_prize(
+            name, milestone, active, admin_role
+        )
+
+    def update_prize(
+        self,
+        prize_id: int,
+        name: str,
+        milestone: str,
+        active: bool,
+        admin_role: str,
+    ) -> None:
+        self._database.update_loyalty_prize(
+            prize_id, name, milestone, active, admin_role
+        )
+
+    def remove_prize(self, prize_id: int, admin_role: str) -> None:
+        self._database.delete_loyalty_prize(prize_id, admin_role)
+
+    def get_prize_draws(
+        self,
+        email: str | None = None,
+        card_month: str | None = None,
+    ) -> list[dict[str, object]]:
+        return self._database.get_loyalty_prize_draws(email, card_month)
+
+    def draw_prize(self, draw_id: int, admin_role: str) -> dict[str, object]:
+        return self._database.draw_loyalty_prize(draw_id, admin_role)
+
+    def mark_prize_given(self, draw_id: int, admin_role: str) -> None:
+        self._database.mark_loyalty_prize_given(draw_id, admin_role)
 
     @staticmethod
     def _normalize_email(email: str) -> str:
