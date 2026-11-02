@@ -127,6 +127,7 @@ class ClientPanel(QWidget):
         self._can_view_health_notes = "view_health_notes" in permissions
         self._can_edit_profile = "edit_client_profile" in permissions
         self._can_mark_deposit_paid = "record_payments" in permissions
+        self._can_view_payment_details = "view_payments" in permissions
         self._clients: list[Customer] = []
         self._build_ui()
         self.refresh()
@@ -146,10 +147,11 @@ class ClientPanel(QWidget):
             lambda text: self._filter_clients(text)
         )
 
-        self._client_table = QTableWidget(0, 4)
-        self._client_table.setHorizontalHeaderLabels(
-            ["Name", "Email", "Phone", "Deposit"]
-        )
+        client_headers = ["Name", "Email", "Phone"]
+        if self._can_view_payment_details:
+            client_headers.append("Deposit")
+        self._client_table = QTableWidget(0, len(client_headers))
+        self._client_table.setHorizontalHeaderLabels(client_headers)
         self._client_table.setSelectionBehavior(
             QTableWidget.SelectionBehavior.SelectRows
         )
@@ -190,10 +192,11 @@ class ClientPanel(QWidget):
 
         self._history_empty_label = QLabel("Select a client to view booking history.")
         self._history_empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._history_table = QTableWidget(0, 4)
-        self._history_table.setHorizontalHeaderLabels(
-            ["Date", "Service", "Status", "Total price"]
-        )
+        history_headers = ["Date", "Service", "Status"]
+        if self._can_view_payment_details:
+            history_headers.append("Total price")
+        self._history_table = QTableWidget(0, len(history_headers))
+        self._history_table.setHorizontalHeaderLabels(history_headers)
         self._history_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self._history_table.horizontalHeader().setStretchLastSection(True)
         self._history_table.hide()
@@ -349,19 +352,20 @@ class ClientPanel(QWidget):
             self._client_table.setItem(row, 0, name_item)
             self._client_table.setItem(row, 1, QTableWidgetItem(client.email))
             self._client_table.setItem(row, 2, QTableWidgetItem(client.phone or ""))
-            self._client_table.setItem(
-                row,
-                3,
-                QTableWidgetItem(
-                    (
-                        f"Paid on {client.deposit_paid_on.isoformat()}"
-                        if client.deposit_paid and client.deposit_paid_on
-                        else "Paid"
-                        if client.deposit_paid
-                        else "Not paid"
-                    )
-                ),
-            )
+            if self._can_view_payment_details:
+                self._client_table.setItem(
+                    row,
+                    3,
+                    QTableWidgetItem(
+                        (
+                            f"Paid on {client.deposit_paid_on.isoformat()}"
+                            if client.deposit_paid and client.deposit_paid_on
+                            else "Paid"
+                            if client.deposit_paid
+                            else "Not paid"
+                        )
+                    ),
+                )
             if client.email == selected_email:
                 self._client_table.selectRow(row)
                 selected_row_found = True
@@ -410,9 +414,10 @@ class ClientPanel(QWidget):
             self._history_table.setItem(row, 0, QTableWidgetItem(record["date"]))
             self._history_table.setItem(row, 1, QTableWidgetItem(record["service"]))
             self._history_table.setItem(row, 2, QTableWidgetItem(record["status"]))
-            self._history_table.setItem(
-                row, 3, QTableWidgetItem(f"₱ {record['total_price']:,.2f}")
-            )
+            if self._can_view_payment_details:
+                self._history_table.setItem(
+                    row, 3, QTableWidgetItem(f"₱ {record['total_price']:,.2f}")
+                )
 
     def _show_empty_history(self, message: str) -> None:
         self._history_table.setRowCount(0)
@@ -435,6 +440,9 @@ class ClientPanel(QWidget):
         self._profile_box.show()
 
     def _update_deposit_button(self) -> None:
+        if not self._can_mark_deposit_paid:
+            self._mark_deposit_paid_button.setEnabled(False)
+            return
         client = self._selected_client()
         self._mark_deposit_paid_button.setEnabled(
             client is not None and not client.deposit_paid

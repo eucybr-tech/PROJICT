@@ -13,7 +13,7 @@ class StaffCustomerScreen(BasePage):
         role: Staff,
         parent=None,
     ) -> None:
-        self._client_panel = ClientPanel(client_manager, role)
+        self._client_panel = ClientPanel(client_manager, role=role)
         super().__init__({"client_manager": client_manager}, parent)
 
     @property
