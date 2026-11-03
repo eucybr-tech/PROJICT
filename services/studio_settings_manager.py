@@ -32,7 +32,6 @@ class StudioSettingsManager:
         map_image_path: str | None = None,
         loyalty_facebook: str | None = None,
         loyalty_phone: str | None = None,
-        loyalty_valid_until: str | None = None,
         loyalty_terms: str | None = None,
         owner_provider_name: str | None = None,
         review_url: str | None = None,
@@ -72,11 +71,6 @@ class StudioSettingsManager:
                 else loyalty_facebook
             ),
             current.loyalty_phone if loyalty_phone is None else loyalty_phone,
-            (
-                current.loyalty_valid_until
-                if loyalty_valid_until is None
-                else loyalty_valid_until
-            ),
             current.loyalty_terms if loyalty_terms is None else loyalty_terms,
             (
                 current.owner_provider_name

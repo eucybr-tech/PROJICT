@@ -198,7 +198,6 @@ class StudioSettingsScreen(BasePage):
                 self._map_image_path,
                 self._loyalty_facebook.text(),
                 self._loyalty_phone.text(),
-                None,
                 self._loyalty_terms.toPlainText(),
                 self._owner_provider_name.text(),
                 self._review_url.text(),

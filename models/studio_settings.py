@@ -1,5 +1,4 @@
 import math
-from datetime import date
 
 from ._validation import validate_nonempty_text, validate_nonnegative_number
 
@@ -38,7 +37,6 @@ class StudioSettings:
         map_image_path: str = "",
         loyalty_facebook: str = _DEFAULT_LOYALTY_FACEBOOK,
         loyalty_phone: str = _DEFAULT_LOYALTY_PHONE,
-        loyalty_valid_until: str = "",
         loyalty_terms: str = _DEFAULT_LOYALTY_TERMS,
         owner_provider_name: str = _DEFAULT_OWNER_PROVIDER_NAME,
         review_url: str = "",
@@ -102,9 +100,6 @@ class StudioSettings:
         self._minimum_spend_per_appointment = validate_nonnegative_number(
             minimum_spend_per_appointment, "minimum_spend_per_appointment"
         )
-        self._loyalty_valid_until = self._validate_valid_until(
-            loyalty_valid_until
-        )
         if not isinstance(loyalty_terms, str):
             raise TypeError("loyalty_terms must be a string")
         self._loyalty_terms = loyalty_terms.strip()
@@ -136,21 +131,6 @@ class StudioSettings:
             raise ValueError(
                 f"{field_name} must be between {minimum} and {maximum}"
             )
-        return text
-
-    @staticmethod
-    def _validate_valid_until(value: str) -> str:
-        if not isinstance(value, str):
-            raise TypeError("loyalty_valid_until must be a date or an empty string")
-        text = value.strip()
-        if not text:
-            return ""
-        try:
-            parsed = date.fromisoformat(text)
-        except ValueError as error:
-            raise ValueError("loyalty_valid_until must use YYYY-MM-DD format") from error
-        if parsed.isoformat() != text:
-            raise ValueError("loyalty_valid_until must use YYYY-MM-DD format")
         return text
 
     @staticmethod
@@ -226,10 +206,6 @@ class StudioSettings:
     @property
     def loyalty_phone(self) -> str:
         return self._loyalty_phone
-
-    @property
-    def loyalty_valid_until(self) -> str:
-        return self._loyalty_valid_until
 
     @property
     def loyalty_terms(self) -> str:

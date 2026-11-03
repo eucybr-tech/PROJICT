@@ -9,9 +9,11 @@ class LoyaltyCard:
         qr_code_path: str | None = None,
         card_code: str | None = None,
         view_code: str | None = None,
+        card_number: int = 1,
     ) -> None:
         self._client_email = validate_nonempty_text(client_email, "client_email").lower()
         self._stamps = self._validate_stamps(stamps)
+        self._card_number = validate_positive_integer(card_number, "card_number")
         if qr_code_path is not None and not isinstance(qr_code_path, str):
             raise TypeError("qr_code_path must be a string or None")
         self._qr_code_path = qr_code_path
@@ -53,6 +55,10 @@ class LoyaltyCard:
     @property
     def view_code(self) -> str | None:
         return self._view_code
+
+    @property
+    def card_number(self) -> int:
+        return self._card_number
 
     def claim_reward(self, stamps_required: int) -> int:
         validate_positive_integer(stamps_required, "stamps_required")

@@ -41,7 +41,7 @@ class LoyaltyManager:
 
     def get_scan_details(
         self, card_code: str
-    ) -> tuple[str, int, int, int] | None:
+    ) -> tuple[str, int, int, int, int] | None:
         if not isinstance(card_code, str) or not card_code.strip():
             return None
         card = self._database.get_loyalty_card_by_code(card_code.strip())
@@ -53,6 +53,7 @@ class LoyaltyManager:
         return (
             client.name,
             card.stamps,
+            card.card_number,
             self.get_stamps_required(),
             self._database.count_unstamped_completed_visits(card.client_email),
         )
@@ -137,13 +138,18 @@ class LoyaltyManager:
         image = qrcode.make(card.card_code)
         image.save(path)
         card_with_qr = LoyaltyCard(
-            card.client_email, card.stamps, str(path), card.card_code, card.view_code
+            card.client_email,
+            card.stamps,
+            str(path),
+            card.card_code,
+            card.view_code,
+            card.card_number,
         )
         self._database.update_loyalty_card(card_with_qr)
         return str(path)
 
     def get_stamps_required(self) -> int:
-        return 10
+        return self._database.get_loyalty_settings().get_stamps_required()
 
     def set_stamps_required(self, value: int) -> None:
         settings = LoyaltySettings(value)
@@ -187,9 +193,9 @@ class LoyaltyManager:
     def get_prize_draws(
         self,
         email: str | None = None,
-        card_month: str | None = None,
+        card_number: int | None = None,
     ) -> list[dict[str, object]]:
-        return self._database.get_loyalty_prize_draws(email, card_month)
+        return self._database.get_loyalty_prize_draws(email, card_number)
 
     def draw_prize(self, draw_id: int, role: User) -> dict[str, object]:
         self._require_admin(role, "draw a prize")

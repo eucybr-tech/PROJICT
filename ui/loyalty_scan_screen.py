@@ -61,10 +61,12 @@ class LoyaltyScanScreen(BasePage):
 
         self._client_name = QLabel("No card selected.")
         self._stamp_status = QLabel()
+        self._card_status = QLabel()
         self._reward_status = QLabel()
         self._waiting_status = QLabel()
         for label in (
             self._client_name,
+            self._card_status,
             self._stamp_status,
             self._reward_status,
             self._waiting_status,
@@ -74,6 +76,7 @@ class LoyaltyScanScreen(BasePage):
         details = QGroupBox("Loyalty card")
         details_form = QFormLayout(details)
         details_form.addRow("Client", self._client_name)
+        details_form.addRow("Card", self._card_status)
         details_form.addRow("Stamps", self._stamp_status)
         details_form.addRow("Reward", self._reward_status)
         details_form.addRow("Visit", self._waiting_status)
@@ -193,13 +196,15 @@ class LoyaltyScanScreen(BasePage):
 
     def _show_unknown_card(self) -> None:
         self._client_name.setText("No loyalty card found for that code.")
+        self._card_status.clear()
         self._stamp_status.clear()
         self._reward_status.clear()
         self._waiting_status.clear()
 
-    def _show_details(self, details: tuple[str, int, int, int]) -> None:
-        name, stamps, required, waiting_count = details
+    def _show_details(self, details: tuple[str, int, int, int, int]) -> None:
+        name, stamps, card_number, required, waiting_count = details
         self._client_name.setText(name)
+        self._card_status.setText(f"Card {card_number}")
         self._stamp_status.setText(f"{stamps} of {required}")
         self._reward_status.setText(
             "Reward ready" if stamps >= required else "Not ready"
@@ -233,8 +238,8 @@ class LoyaltyScanScreen(BasePage):
             return
         self._show_details(details)
         self._add_stamp_button.setEnabled(False)
-        self._stamp_status.setText(f"{card.stamps} of {details[2]}")
-        if details[3]:
+        self._stamp_status.setText(f"{card.stamps} of {details[3]}")
+        if details[4]:
             self._waiting_status.setText(
                 "Stamp added. Another completed visit is waiting; scan this card "
                 "again to add its stamp."

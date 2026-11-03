@@ -1,5 +1,4 @@
 import base64
-import calendar
 import html
 import mimetypes
 import re
@@ -9,13 +8,11 @@ import sys
 import threading
 import time
 from collections import deque
-from datetime import date
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit
 
 from database import Database
-from models import StudioSettings
 
 
 _CODE_PATTERN = re.compile(r"[A-Za-z0-9_-]{22}\Z")
@@ -207,15 +204,12 @@ class LoyaltyWebServer:
                 if database is None:
                     self._send(503, "text/plain; charset=utf-8", "Service unavailable")
                     return
-                current_date = date.today()
-                card = database.get_web_card(view_code, current_date)
+                card = database.get_web_card(view_code)
                 if card is None:
                     self._send(404, "text/plain; charset=utf-8", "Not found")
                     return
                 html_page = owner._card_page(
                     *card,
-                    settings=database.get_studio_settings(),
-                    today=current_date,
                 )
                 self._send(200, "text/html; charset=utf-8", html_page)
 
@@ -268,20 +262,18 @@ class LoyaltyWebServer:
     def _card_page(
         self,
         full_name: str,
+        card_number: int,
         stamps: int,
+        stamps_required: int,
+        completed_cards: int,
         prize_draws: list[dict[str, object]] | None = None,
-        expired: bool = False,
-        settings: StudioSettings | None = None,
-        today: date | None = None,
     ) -> str:
-        settings = settings or StudioSettings()
-        current_date = today or date.today()
         first_name = html.escape(
             full_name.split(maxsplit=1)[0] if full_name else "Customer"
         )
         safe_salon_name = html.escape(self._salon_name)
         safe_logo_data = html.escape(self._logo_data_uri(), quote=True)
-        filled = min(max(stamps, 0), 10)
+        filled = min(max(stamps, 0), stamps_required)
         circles: list[str] = []
         gift_icon = (
             '<svg class="gift" viewBox="0 0 24 24" aria-hidden="true">'
@@ -291,9 +283,9 @@ class LoyaltyWebServer:
             'fill="none" stroke="currentColor" stroke-width="1.7" '
             'stroke-linecap="round" stroke-linejoin="round"/></svg>'
         )
-        for index in range(10):
+        for index in range(stamps_required):
             earned = index < filled
-            reward_stamp = index in (4, 9)
+            reward_stamp = index + 1 in (5, 10)
             content = gift_icon if reward_stamp else ("✓" if earned else "")
             classes = "stamp earned" if earned else "stamp"
             if reward_stamp:
@@ -315,17 +307,9 @@ class LoyaltyWebServer:
                     f'{html.escape(str(draw["prize_name"]))}!</p>'
                 )
         reward_message = "".join(reward_lines)
-        last_day = calendar.monthrange(current_date.year, current_date.month)[1]
-        valid_until = date(current_date.year, current_date.month, last_day)
-        validity_message = (
-            '<p class="validity expired">Expired</p>'
-            if expired
-            else (
-                f'<p class="validity">Valid until '
-                f'{valid_until.strftime("%B %d, %Y")}</p>'
-            )
-        )
-        safe_count = html.escape(f"{filled} of 10")
+        safe_count = html.escape(f"{filled} of {stamps_required} stamps")
+        safe_card_number = html.escape(str(card_number))
+        safe_completed_cards = html.escape(str(completed_cards))
         page = f"""<!doctype html>
 <html lang="en">
 <head>
@@ -347,18 +331,19 @@ h1 {{ margin: 10px 0 3px; font-size: 1.75rem; line-height: 1.15; font-weight: 70
 .gift {{ width: 25px; height: 25px; }}
 .count {{ margin: 8px 0; font-size: 1.25rem; font-weight: 700; }}
 .prize {{ margin: 8px 0; color: #24754b; font-weight: 700; }}
-.name, .validity {{ margin: 12px 0 0; }}
-.expired {{ color: #b42332; font-weight: 700; }}
+.name, .card-number, .completed {{ margin: 12px 0 0; }}
+.completed {{ color: #74636b; font-size: .85rem; }}
 </style>
 </head>
 <body><main>
 <img src="{safe_logo_data}" alt="{safe_salon_name} logo">
 <h1>LOYALTY CARD</h1>
-<div class="grid" aria-label="Ten loyalty stamps">{''.join(circles)}</div>
+<p class="card-number">Card {safe_card_number}</p>
+<div class="grid" aria-label="{stamps_required} loyalty stamps">{''.join(circles)}</div>
 <p class="count">{safe_count}</p>
 {reward_message}
-<p class="name"><strong>Name:</strong> {first_name}</p>
-{validity_message}
+<p class="name">{first_name}</p>
+<p class="completed">Completed cards: {safe_completed_cards}</p>
 </main></body></html>"""
         return page
 

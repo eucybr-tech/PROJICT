@@ -122,9 +122,9 @@ class LoyaltyCardScreen(BasePage):
         self._search_box.setPlaceholderText("Search name or email")
         self._search_box.textChanged.connect(lambda _text: self._populate_table())
 
-        self._client_table = QTableWidget(0, 3)
+        self._client_table = QTableWidget(0, 4)
         self._client_table.setHorizontalHeaderLabels(
-            ["Name", "Email", "This month's stamps"]
+            ["Name", "Email", "Current card", "Stamps"]
         )
         self._client_table.setSelectionBehavior(
             QTableWidget.SelectionBehavior.SelectRows
@@ -136,6 +136,7 @@ class LoyaltyCardScreen(BasePage):
         client_header.setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
         client_header.setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
         client_header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        client_header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
         self._client_table.setColumnWidth(0, 150)
         self._client_table.setColumnWidth(1, 220)
         self._client_table.setStyleSheet(
@@ -253,7 +254,7 @@ class LoyaltyCardScreen(BasePage):
 
         self._draw_table = QTableWidget(0, 5)
         self._draw_table.setHorizontalHeaderLabels(
-            ["Client", "Card month", "Milestone", "Prize", "Status"]
+            ["Client", "Card", "Milestone", "Prize", "Status"]
         )
         self._draw_table.setSelectionBehavior(
             QTableWidget.SelectionBehavior.SelectRows
@@ -295,6 +296,7 @@ class LoyaltyCardScreen(BasePage):
         available = (
             table.viewport().width()
             - header.sectionSize(2)
+            - header.sectionSize(3)
         )
         email_width = max(220, round(available * 0.38))
         name_width = max(150, available - email_width)
@@ -360,7 +362,7 @@ class LoyaltyCardScreen(BasePage):
             client_item.setToolTip(str(draw["client_email"]))
             self._draw_table.setItem(row, 0, client_item)
             self._draw_table.setItem(
-                row, 1, QTableWidgetItem(str(draw["card_month"]))
+                row, 1, QTableWidgetItem(f"Card {draw['card_number']}")
             )
             self._draw_table.setItem(
                 row, 2, QTableWidgetItem(f"{draw['milestone']}th stamp")
@@ -583,7 +585,14 @@ class LoyaltyCardScreen(BasePage):
             email_item.setToolTip(client.email)
             self._client_table.setItem(row, 1, email_item)
             self._client_table.setItem(
-                row, 2, QTableWidgetItem(f"{card.stamps} / 10")
+                row, 2, QTableWidgetItem(f"Card {card.card_number}")
+            )
+            self._client_table.setItem(
+                row,
+                3,
+                QTableWidgetItem(
+                    f"{card.stamps} / {self._loyalty_manager.get_stamps_required()}"
+                ),
             )
             if client.email == selected_email:
                 self._client_table.selectRow(row)

@@ -102,7 +102,6 @@ class LoyaltyCardPageTests(unittest.TestCase):
                 self.fail("Temporary card did not receive a view code")
             server = LoyaltyWebServer(root / "test.sqlite")
             settings = database.get_studio_settings()
-            current_month = date.today().strftime("%Y-%m")
             html_paths: list[Path] = []
             try:
                 for stamps in (0, 3, 5, 10):
@@ -118,13 +117,14 @@ class LoyaltyCardPageTests(unittest.TestCase):
                         database._connection.execute(
                             """
                             INSERT INTO loyalty_monthly_stamps
-                                (appointment_id, client_email, card_month, stamped_at)
-                            VALUES (?, ?, ?, ?)
+                                (appointment_id, client_email, card_month, stamped_at,
+                                 card_number)
+                            VALUES (?, ?, ?, ?, 1)
                             """,
                             (
                                 appointment_id,
                                 client_email,
-                                current_month,
+                                "2026-01",
                                 datetime.now().isoformat(),
                             ),
                         )
@@ -134,26 +134,35 @@ class LoyaltyCardPageTests(unittest.TestCase):
                                 database._connection.execute(
                                     """
                                     INSERT INTO loyalty_prize_draws
-                                        (client_email, card_month, milestone, status, created_at)
-                                    VALUES (?, ?, ?, 'Pending', ?)
+                                        (client_email, card_month, milestone,
+                                         card_number, status, created_at)
+                                    VALUES (?, ?, ?, 1, 'Pending', ?)
                                     """,
                                     (
                                         client_email,
-                                        current_month,
+                                        f"card-number:1",
                                         milestone,
                                         datetime.now().isoformat(),
                                     ),
                                 )
+                    database._connection.execute(
+                        """
+                        UPDATE loyalty_cards SET card_number = 1, stamps = ?
+                        WHERE client_email = ?
+                        """,
+                        (stamps, client_email),
+                    )
                     card_data = database.get_web_card(card.view_code)
                     self.assertIsNotNone(card_data)
                     if card_data is None:
                         self.fail("Temporary web card could not be loaded")
-                    page = server._card_page(*card_data, settings=settings)
+                    page = server._card_page(*card_data)
                     path = root / f"card_{stamps}_stamps.html"
                     path.write_text(page, encoding="utf-8")
                     html_paths.append(path)
                     self.assertTrue(path.is_file())
-                    self.assertIn(f"{stamps} of 10", page)
+                    self.assertIn(f"{stamps} of 10 stamps", page)
+                    self.assertIn("Card 1", page)
                     self.assertEqual(
                         "You earned a prize draw!" in page,
                         stamps >= 5,
@@ -167,37 +176,14 @@ class LoyaltyCardPageTests(unittest.TestCase):
                     self.assertNotIn(settings.loyalty_phone, page)
                     self.assertIn('content="15"', page)
                     self.assertIn("LOYALTY CARD", page)
-                    self.assertIn("Name:</strong> Avery", page)
+                    self.assertIn('class="name">Avery</p>', page)
                     self.assertNotIn("<script>", page)
                     self.assertNotIn("Example", page)
                     self.assertNotIn("CLIENT_", page)
                     self.assertEqual(page.count('class="stamp'), 10)
-
-                previous_month = (date.today().replace(day=1) - timedelta(days=1)).strftime("%Y-%m")
-                database._connection.execute(
-                    "DELETE FROM loyalty_monthly_stamps WHERE client_email = ?",
-                    (client_email,),
-                )
-                database._connection.execute(
-                    """
-                    INSERT INTO loyalty_monthly_stamps
-                        (appointment_id, client_email, card_month, stamped_at)
-                    VALUES (?, ?, ?, ?)
-                    """,
-                    (2000, client_email, previous_month, datetime.now().isoformat()),
-                )
-                expired_data = database.get_web_card(card.view_code)
-                if expired_data is None:
-                    self.fail("Temporary web card could not be loaded")
-                expired_page = server._card_page(
-                    *expired_data, settings=database.get_studio_settings()
-                )
-                expired_path = root / "card_expired.html"
-                expired_path.write_text(expired_page, encoding="utf-8")
-                html_paths.append(expired_path)
-                self.assertIn(">Expired</p>", expired_page)
-                self.assertIn("expired", expired_page)
-                self.assertNotIn("Valid until ", expired_page)
+                    self.assertNotIn("Valid until", page)
+                    self.assertNotIn(">Expired<", page)
+                    self.assertNotIn("loyalty card is non-transferable", page)
                 for path in html_paths:
                     print(path)
             finally:
@@ -218,6 +204,16 @@ class LoyaltyCardPageTests(unittest.TestCase):
                 self.assertEqual(settings.review_url, "")
                 self.assertEqual(settings.loyalty_phone, "09690811806")
                 self.assertEqual(settings.minimum_spend_per_appointment, 500)
+                self.assertFalse(hasattr(settings, "loyalty_valid_until"))
+                self.assertIn(
+                    "loyalty_valid_until",
+                    {
+                        row["name"]
+                        for row in database._connection.execute(
+                            "PRAGMA table_info(studio_settings)"
+                        ).fetchall()
+                    },
+                )
                 self.assertEqual(
                     settings.loyalty_terms,
                     "This loyalty card is non-transferable.\n"
@@ -236,7 +232,7 @@ class LoyaltyCardPageTests(unittest.TestCase):
                 try:
                     self.assertIn("at least P500", screen._step_labels[0].text())
                     self.assertIn("5 and 10 stamps", screen._step_labels[3].text())
-                    self.assertIn("Valid until", screen._valid_until_label.text())
+                    self.assertIn("never expires", screen._step_labels[3].text())
                     terms = screen.findChildren(QLabel)
                     term_text = "\n".join(label.text() for label in terms)
                     self.assertIn("Terms & Conditions", term_text)
@@ -427,7 +423,7 @@ class LoyaltyCardPageTests(unittest.TestCase):
                 current_card = manager.get_card(email)
                 self.assertIsNotNone(current_card)
                 if current_card is None:
-                    self.fail("Monthly loyalty card was not found")
+                    self.fail("Loyalty card was not found")
                 self.assertEqual(current_card.stamps, 1)
                 self.assertEqual(
                     database._connection.execute(
@@ -649,85 +645,228 @@ class LoyaltyCardPageTests(unittest.TestCase):
             finally:
                 database.close()
 
-    def test_month_rollover_expires_old_card_and_preserves_stamp_history(self) -> None:
-        fixed_today = date(2026, 1, 31)
+    def test_cards_never_expire_and_each_ten_stamp_card_draws_once(self) -> None:
+        fixed_today = date(2027, 1, 1)
 
         class FixedDate(date):
             @classmethod
             def today(cls) -> date:
                 return fixed_today
 
-        with tempfile.TemporaryDirectory(prefix="loyalty_rollover_test_") as folder:
+        with tempfile.TemporaryDirectory(prefix="loyalty_non_expiring_test_") as folder:
             database, manager, email, service_id = self._create_stamp_fixture(
-                Path(folder) / "rollover.sqlite"
+                Path(folder) / "cards.sqlite"
             )
             try:
-                card = manager.get_or_create_card(email)
-                old_visit = self._add_visit(
-                    database,
-                    email,
-                    service_id,
-                    530,
-                    appointment_time=datetime(2026, 1, 31, 12, 0),
+                manager.add_prize(
+                    "Card fifth prize",
+                    "5",
+                    True,
+                    Admin("Test Admin", "test-admin@example.test"),
                 )
-                manager.add_stamp_for_card_code(card.card_code or "")
-                with (
-                    patch("database.database.date", FixedDate),
-                    patch("services.loyalty_web_server.date", FixedDate),
-                ):
-                    january_data = database.get_web_card(card.view_code or "")
-                    self.assertIsNotNone(january_data)
-                    if january_data is None:
-                        self.fail("Monthly phone card was not found")
-                    january_page = LoyaltyWebServer(
-                        Path(folder) / "rollover.sqlite"
-                    )._card_page(*january_data, settings=database.get_studio_settings())
-                    self.assertIn("1 of 10", january_page)
-                    self.assertIn("Valid until January 31, 2026", january_page)
+                manager.add_prize(
+                    "Card tenth prize",
+                    "10",
+                    True,
+                    Admin("Test Admin", "test-admin@example.test"),
+                )
+                card = manager.get_or_create_card(email)
+                server = LoyaltyWebServer(Path(folder) / "cards.sqlite")
+                with patch("database.database.date", FixedDate):
+                    for index in range(20):
+                        visit_time = datetime(2026, 1, 1, 12, 0) + timedelta(
+                            days=index * 10
+                        )
+                        visit = self._add_visit(
+                            database,
+                            email,
+                            service_id,
+                            530,
+                            appointment_time=visit_time,
+                        )
+                        token = manager.create_stamp_token(
+                            self._appointment_id(visit)
+                        )
+                        self.assertEqual(
+                            database.redeem_stamp_token(token)[0], "success"
+                        )
+                        self.assertEqual(
+                            database.redeem_stamp_token(token), ("used", None)
+                        )
+                        if index == 9:
+                            card_data = database.get_web_card(card.view_code or "")
+                            self.assertIsNotNone(card_data)
+                            if card_data is None:
+                                self.fail("Completed phone card was not found")
+                            self.assertEqual(card_data[1:5], (1, 10, 10, 1))
+                            page = server._card_page(*card_data)
+                            self.assertIn("Card 1", page)
+                            self.assertIn("10 of 10 stamps", page)
+                            self.assertIn("Completed cards: 1", page)
+                            self.assertIn("You won: Card fifth prize!", page)
+                            self.assertNotIn("Valid until", page)
+                            self.assertNotIn(">Expired<", page)
+                            self.assertNotIn("Terms &amp; Conditions", page)
+                        if index == 10:
+                            card_data = database.get_web_card(card.view_code or "")
+                            self.assertIsNotNone(card_data)
+                            if card_data is None:
+                                self.fail("Second phone card was not found")
+                            self.assertEqual(card_data[1:5], (2, 1, 10, 1))
+                            page = server._card_page(*card_data)
+                            self.assertIn("Card 2", page)
+                            self.assertIn("1 of 10 stamps", page)
+                            self.assertIn("Completed cards: 1", page)
+                            self.assertNotIn("Valid until", page)
+                            self.assertNotIn(">Expired<", page)
 
-                    february_data = database.get_web_card(
-                        card.view_code or "", date(2026, 2, 1)
-                    )
-                    self.assertIsNotNone(february_data)
-                    if february_data is None:
-                        self.fail("Expired phone card was not found")
-                    expired_page = LoyaltyWebServer(
-                        Path(folder) / "rollover.sqlite"
-                    )._card_page(
-                        *february_data,
-                        settings=database.get_studio_settings(),
-                        today=date(2026, 2, 1),
-                    )
-                    self.assertIn(">Expired</p>", expired_page)
-                    self.assertIn("0 of 10", expired_page)
-
-                    february_visit = self._add_visit(
-                        database,
-                        email,
-                        service_id,
-                        530,
-                        appointment_time=datetime(2026, 2, 1, 12, 0),
-                    )
-                    manager.add_stamp_for_card_code(card.card_code or "")
-                    february_data = database.get_web_card(
-                        card.view_code or "", date(2026, 2, 1)
-                    )
-                    self.assertIsNotNone(february_data)
-                    if february_data is None:
-                        self.fail("New monthly phone card was not found")
-                    self.assertEqual(february_data[1], 1)
-                    self.assertFalse(february_data[3])
+                draws = manager.get_prize_draws(email)
+                self.assertEqual(
+                    [
+                        (draw["card_number"], draw["milestone"], draw["status"])
+                        for draw in draws
+                    ],
+                    [
+                        (1, 5, "Drawn"),
+                        (1, 10, "Drawn"),
+                        (2, 5, "Drawn"),
+                        (2, 10, "Drawn"),
+                    ],
+                )
                 self.assertEqual(
                     database._connection.execute(
-                        "SELECT COUNT(*) FROM loyalty_monthly_stamps "
-                        "WHERE appointment_id IN (?, ?)",
-                        (
-                            self._appointment_id(old_visit),
-                            self._appointment_id(february_visit),
-                        ),
+                        """
+                        SELECT COUNT(*) FROM loyalty_prize_draws
+                        WHERE client_email = ?
+                        """,
+                        (email,),
                     ).fetchone()[0],
-                    2,
+                    4,
                 )
+                self.assertEqual(
+                    database._connection.execute(
+                        """
+                        SELECT COUNT(*) FROM loyalty_monthly_stamps
+                        WHERE client_email = ?
+                        """,
+                        (email,),
+                    ).fetchone()[0],
+                    20,
+                )
+            finally:
+                database.close()
+
+    def test_legacy_stamps_and_draws_migrate_to_numbered_cards_idempotently(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory(prefix="loyalty_card_migration_") as folder:
+            path = Path(folder) / "legacy.sqlite"
+            database = Database(path)
+            database.initialize_schema()
+            email = "legacy-client@example.test"
+            database.add_client(Customer("Legacy Client", email))
+            database.get_or_create_loyalty_card(email)
+            try:
+                for index in range(20):
+                    month_number = index // 5 + 1
+                    month = f"2024-{month_number:02d}"
+                    stamped_at = datetime(
+                        2024, month_number, index % 5 + 1, 12, 0
+                    )
+                    database._connection.execute(
+                        """
+                        INSERT INTO loyalty_monthly_stamps
+                            (appointment_id, client_email, card_month, stamped_at)
+                        VALUES (?, ?, ?, ?)
+                        """,
+                        (
+                            10000 + index,
+                            email,
+                            month,
+                            stamped_at.isoformat(),
+                        ),
+                    )
+
+                legacy_draws = [
+                    ("2024-01", "Given", "Legacy prize 1"),
+                    ("2024-02", "Drawn", "Legacy prize 2"),
+                    ("2024-03", "Pending", ""),
+                    ("2024-04", "Given", "Legacy prize 4"),
+                ]
+                for draw_month, status, prize_name in legacy_draws:
+                    database._connection.execute(
+                        """
+                        INSERT INTO loyalty_prize_draws
+                            (client_email, card_month, milestone, status,
+                             prize_name, created_at)
+                        VALUES (?, ?, 5, ?, ?, ?)
+                        """,
+                        (
+                            email,
+                            draw_month,
+                            status,
+                            prize_name,
+                            f"{draw_month}-05T13:00:00",
+                        ),
+                    )
+
+                database._connection.execute(
+                    "DROP TRIGGER loyalty_draw_card_milestone_unique"
+                )
+                database._connection.execute(
+                    "ALTER TABLE loyalty_monthly_stamps DROP COLUMN card_number"
+                )
+                database._connection.execute(
+                    "ALTER TABLE loyalty_prize_draws DROP COLUMN card_number"
+                )
+                database._connection.execute(
+                    "ALTER TABLE loyalty_cards DROP COLUMN card_number"
+                )
+                database._connection.commit()
+                database.close()
+                database = Database(path)
+                database.initialize_schema()
+                database.initialize_schema()
+
+                stamps = database._connection.execute(
+                    """
+                    SELECT appointment_id, card_number
+                    FROM loyalty_monthly_stamps
+                    WHERE client_email = ?
+                    ORDER BY stamped_at, appointment_id
+                    """,
+                    (email,),
+                ).fetchall()
+                self.assertEqual(
+                    [int(row["card_number"]) for row in stamps],
+                    [1] * 10 + [2] * 10,
+                )
+                draws = database.get_loyalty_prize_draws(email)
+                self.assertEqual(
+                    [
+                        (draw["card_number"], draw["status"], draw["prize_name"])
+                        for draw in draws
+                    ],
+                    [
+                        (1, "Given", "Legacy prize 1"),
+                        (1, "Drawn", "Legacy prize 2"),
+                        (2, "Pending", ""),
+                        (2, "Given", "Legacy prize 4"),
+                    ],
+                )
+                self.assertEqual(
+                    database._connection.execute(
+                        "SELECT COUNT(*) FROM loyalty_prize_draws "
+                        "WHERE client_email = ?",
+                        (email,),
+                    ).fetchone()[0],
+                    4,
+                )
+                card = database.get_loyalty_card(email)
+                self.assertIsNotNone(card)
+                if card is None:
+                    self.fail("Migrated loyalty card was not found")
+                self.assertEqual((card.card_number, card.stamps), (2, 10))
             finally:
                 database.close()
 
