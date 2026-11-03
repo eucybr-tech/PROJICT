@@ -19,10 +19,9 @@ class StudioSettings:
     _DEFAULT_OWNER_PROVIDER_NAME = "Nicole Pearl Millari Teodoro"
     _DEFAULT_LOYALTY_TERMS = (
         "This loyalty card is non-transferable.\n"
-        "Earn sticker for every minimum spend of P500 per visit.\n"
-        "Earn 1 prize draw for every 5 stickers collected!\n"
-        "Card must be presented upon purchase to receive sticker.\n"
-        "Loyalty cards are valid only until expiry date"
+        "Earn a sticker for every minimum spend of P500.\n"
+        "Earn a prize draw when you reach 5 stickers and 10 stickers!\n"
+        "Card must be presented upon purchase to receive sticker."
     )
 
     def __init__(

@@ -837,6 +837,35 @@ class AppointmentEmailFlowTests(unittest.TestCase):
                 role=self.admin_role,
             )
 
+    def test_review_url_rejects_non_http_and_legacy_value_is_not_emailed(self) -> None:
+        settings = self.database.get_studio_settings()
+        with self.assertRaisesRegex(
+            ValueError, "Review URL must start with http:// or https://"
+        ):
+            StudioSettingsManager(self.database).update_settings(
+                settings.default_travel_fee,
+                settings.travel_buffer_minutes,
+                settings.service_area_note,
+                review_url="javascript:alert(1)",
+                role=self.admin_role,
+            )
+
+        with patch.object(NotificationService, "_send_message") as sender:
+            NotificationService().send_booking_received(
+                self.email,
+                "Taylor",
+                "Test Manicure",
+                datetime(2026, 11, 1, 13, 30),
+                42,
+                review_url="javascript:alert(1)",
+            )
+
+        plain_body, html_body = sender.call_args.args[2:4]
+        self.assertNotIn("javascript:", plain_body)
+        self.assertNotIn("javascript:", html_body)
+        self.assertNotIn("Write a Review", plain_body)
+        self.assertNotIn("Write a Review", html_body)
+
     def test_special_characters_are_escaped_in_html(self) -> None:
         with patch.object(NotificationService, "_send_message") as send_message:
             NotificationService().send_booking_received(

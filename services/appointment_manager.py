@@ -337,6 +337,19 @@ class AppointmentManager:
         self._database.update_appointment(appointment)
         return appointment
 
+    def record_cancellation_fee_payment(
+        self,
+        appointment_id: int,
+        payment_method: str,
+        role: User,
+    ) -> dict[str, object]:
+        self._require_admin(role, "record a cancellation fee payment")
+        return self._database.record_cancellation_fee_payment(
+            appointment_id,
+            payment_method,
+            role.get_role_name(),
+        )
+
     def update_status(
         self,
         appointment_id: int,

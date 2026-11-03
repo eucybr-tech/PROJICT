@@ -321,7 +321,7 @@ class LoyaltyCardScreen(BasePage):
             return
         self._populate_table(selected_email)
         self._populate_prizes(prizes)
-        self._populate_draws(draws)
+        self._populate_draws(draws, prizes)
 
     def _populate_prizes(self, prizes: list[dict[str, object]]) -> None:
         self._prize_table.setRowCount(0)
@@ -346,7 +346,11 @@ class LoyaltyCardScreen(BasePage):
             )
         self._update_prize_actions()
 
-    def _populate_draws(self, draws: list[dict[str, object]]) -> None:
+    def _populate_draws(
+        self,
+        draws: list[dict[str, object]],
+        prizes: list[dict[str, object]],
+    ) -> None:
         self._draw_table.setRowCount(0)
         for draw in draws:
             row = self._draw_table.rowCount()
@@ -361,8 +365,18 @@ class LoyaltyCardScreen(BasePage):
             self._draw_table.setItem(
                 row, 2, QTableWidgetItem(f"{draw['milestone']}th stamp")
             )
+            prize_name = str(draw["prize_name"])
+            if draw["status"] == "Pending" and not any(
+                prize["active"]
+                and str(prize["milestone"]) in {
+                    str(draw["milestone"]),
+                    "both",
+                }
+                for prize in prizes
+            ):
+                prize_name = "No active prize for this milestone"
             self._draw_table.setItem(
-                row, 3, QTableWidgetItem(str(draw["prize_name"]))
+                row, 3, QTableWidgetItem(prize_name)
             )
             self._draw_table.setItem(
                 row, 4, QTableWidgetItem(str(draw["status"]))

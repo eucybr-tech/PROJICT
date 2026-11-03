@@ -13,6 +13,7 @@ class PendingPayments(TypedDict):
 class StatusCounts(TypedDict):
     counts: dict[str, int]
     cancellation_fees: float
+    cancellation_fee_income: float
 
 
 class ReportManager:
@@ -90,6 +91,11 @@ class ReportManager:
         return {
             "counts": counts,
             "cancellation_fees": cancellation_fees,
+            "cancellation_fee_income": (
+                self._database.get_report_cancellation_fee_income(
+                    start_date, end_date
+                )
+            ),
         }
 
     def by_service(

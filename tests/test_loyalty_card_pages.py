@@ -25,6 +25,7 @@ from models import (
 from services.loyalty_manager import LoyaltyManager
 from services.studio_settings_manager import StudioSettingsManager
 from services.loyalty_web_server import LoyaltyWebServer
+from ui.admin_screens.loyalty_card_screen import LoyaltyCardScreen
 from ui.admin_screens.studio_settings_screen import StudioSettingsScreen
 from ui.customer_screens.loyalty_screen import LoyaltyScreen
 
@@ -217,7 +218,13 @@ class LoyaltyCardPageTests(unittest.TestCase):
                 self.assertEqual(settings.review_url, "")
                 self.assertEqual(settings.loyalty_phone, "09690811806")
                 self.assertEqual(settings.minimum_spend_per_appointment, 500)
-                self.assertEqual(len(settings.loyalty_terms.splitlines()), 5)
+                self.assertEqual(
+                    settings.loyalty_terms,
+                    "This loyalty card is non-transferable.\n"
+                    "Earn a sticker for every minimum spend of P500.\n"
+                    "Earn a prize draw when you reach 5 stickers and 10 stickers!\n"
+                    "Card must be presented upon purchase to receive sticker.",
+                )
 
                 database.update_loyalty_settings(LoyaltySettings(7))
                 screen = LoyaltyScreen(
@@ -307,12 +314,54 @@ class LoyaltyCardPageTests(unittest.TestCase):
                 self.assertEqual(settings.loyalty_facebook, "@pearl's signailture")
                 self.assertEqual(settings.loyalty_phone, "09690811806")
                 self.assertEqual(settings.minimum_spend_per_appointment, 500)
-                self.assertEqual(len(settings.loyalty_terms.splitlines()), 5)
+                self.assertEqual(len(settings.loyalty_terms.splitlines()), 4)
                 sentinel = database._connection.execute(
                     "SELECT value FROM migration_sentinel"
                 ).fetchone()
                 self.assertIsNotNone(sentinel)
                 self.assertEqual(sentinel["value"], "preserved")
+            finally:
+                database.close()
+
+    def test_terms_migration_replaces_only_the_exact_old_default(self) -> None:
+        old_terms = (
+            "This loyalty card is non-transferable.\n"
+            "Earn sticker for every minimum spend of P500 per visit.\n"
+            "Earn 1 prize draw for every 5 stickers collected!\n"
+            "Card must be presented upon purchase to receive sticker.\n"
+            "Loyalty cards are valid only until expiry date"
+        )
+        new_terms = (
+            "This loyalty card is non-transferable.\n"
+            "Earn a sticker for every minimum spend of P500.\n"
+            "Earn a prize draw when you reach 5 stickers and 10 stickers!\n"
+            "Card must be presented upon purchase to receive sticker."
+        )
+        with tempfile.TemporaryDirectory(prefix="loyalty_terms_migration_") as folder:
+            database = Database(Path(folder) / "terms.sqlite")
+            try:
+                database.initialize_schema()
+                database._connection.execute(
+                    "UPDATE studio_settings SET loyalty_terms = ? "
+                    "WHERE setting_id = 1",
+                    (old_terms,),
+                )
+                database.initialize_schema()
+                self.assertEqual(
+                    database.get_studio_settings().loyalty_terms, new_terms
+                )
+
+                custom_terms = "Custom term one\nCustom term two"
+                database._connection.execute(
+                    "UPDATE studio_settings SET loyalty_terms = ? "
+                    "WHERE setting_id = 1",
+                    (custom_terms,),
+                )
+                database.initialize_schema()
+                self.assertEqual(
+                    database.get_studio_settings().loyalty_terms,
+                    custom_terms,
+                )
             finally:
                 database.close()
 
@@ -391,6 +440,52 @@ class LoyaltyCardPageTests(unittest.TestCase):
             finally:
                 database.close()
 
+    def test_typed_code_skips_below_minimum_for_later_qualifying_visit(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="loyalty_qualifying_visit_") as folder:
+            database, manager, email, service_id = self._create_stamp_fixture(
+                Path(folder) / "qualifying.sqlite"
+            )
+            try:
+                base_time = datetime.combine(
+                    date.today(), datetime.min.time()
+                )
+                below_minimum = self._add_visit(
+                    database,
+                    email,
+                    service_id,
+                    450,
+                    appointment_time=base_time + timedelta(hours=9),
+                )
+                qualifying = self._add_visit(
+                    database,
+                    email,
+                    service_id,
+                    530,
+                    appointment_time=base_time + timedelta(hours=10),
+                )
+                card = manager.get_or_create_card(email)
+
+                updated_card = manager.add_stamp_for_card_code(
+                    card.card_code or "", "Admin"
+                )
+
+                if updated_card is None:
+                    self.fail("Qualifying appointment did not add a stamp")
+                self.assertEqual(updated_card.stamps, 1)
+                stamped_appointment = database._connection.execute(
+                    "SELECT appointment_id FROM loyalty_monthly_stamps"
+                ).fetchone()
+                self.assertEqual(
+                    int(stamped_appointment["appointment_id"]),
+                    self._appointment_id(qualifying),
+                )
+                self.assertNotEqual(
+                    self._appointment_id(below_minimum),
+                    int(stamped_appointment["appointment_id"]),
+                )
+            finally:
+                database.close()
+
     def test_travel_fee_does_not_count_toward_minimum_spend(self) -> None:
         with tempfile.TemporaryDirectory(prefix="loyalty_travel_test_") as folder:
             database, manager, email, service_id = self._create_stamp_fixture(
@@ -443,25 +538,54 @@ class LoyaltyCardPageTests(unittest.TestCase):
             finally:
                 database.close()
 
-    def test_fifth_and_tenth_stamp_create_unique_pending_draws(self) -> None:
+    def test_fifth_and_tenth_stamp_auto_draw_one_active_matching_prize(self) -> None:
         with tempfile.TemporaryDirectory(prefix="loyalty_milestone_test_") as folder:
             database, manager, email, service_id = self._create_stamp_fixture(
                 Path(folder) / "milestones.sqlite"
             )
             try:
+                admin_role = Admin("Test Admin", "test-admin@example.test")
+                manager.add_prize("Active fifth", "5", True, admin_role)
+                manager.add_prize("Inactive fifth", "5", False, admin_role)
+                manager.add_prize("Active tenth", "10", True, admin_role)
+                manager.add_prize("Inactive tenth", "10", False, admin_role)
                 card = manager.get_or_create_card(email)
                 for _ in range(10):
-                    self._add_visit(database, email, service_id, 530)
-                    manager.add_stamp_for_card_code(card.card_code or "")
+                    visit = self._add_visit(database, email, service_id, 530)
+                    token = manager.create_stamp_token(
+                        self._appointment_id(visit)
+                    )
+                    self.assertEqual(
+                        database.redeem_stamp_token(token)[0], "success"
+                    )
+                    self.assertEqual(
+                        database.redeem_stamp_token(token), ("used", None)
+                    )
                 draws = manager.get_prize_draws(email)
                 self.assertEqual(
-                    [(draw["milestone"], draw["status"]) for draw in draws],
-                    [(5, "Pending"), (10, "Pending")],
+                    [
+                        (draw["milestone"], draw["status"], draw["prize_name"])
+                        for draw in draws
+                    ],
+                    [
+                        (5, "Drawn", "Active fifth"),
+                        (10, "Drawn", "Active tenth"),
+                    ],
                 )
-                self.assertIsNone(
-                    manager.add_stamp_for_card_code(card.card_code or "")
+                draw_counts = database._connection.execute(
+                    """
+                    SELECT milestone, COUNT(*) AS count
+                    FROM loyalty_prize_draws
+                    WHERE client_email = ?
+                    GROUP BY milestone
+                    ORDER BY milestone
+                    """,
+                    (email,),
+                ).fetchall()
+                self.assertEqual(
+                    [(row["milestone"], row["count"]) for row in draw_counts],
+                    [(5, 1), (10, 1)],
                 )
-                self.assertEqual(len(manager.get_prize_draws(email)), 2)
             finally:
                 database.close()
 
@@ -481,6 +605,20 @@ class LoyaltyCardPageTests(unittest.TestCase):
                 staff_role = Staff("Test Staff", "test-staff@example.test")
                 manager.add_prize("Inactive fifth", "5", False, admin_role)
                 manager.add_prize("Tenth only", "10", True, admin_role)
+                self.assertEqual(draw["status"], "Pending")
+                screen = LoyaltyCardScreen(manager, admin_role)
+                try:
+                    screen._draw_table.setCurrentCell(0, 0)
+                    prize_item = screen._draw_table.item(0, 3)
+                    if prize_item is None:
+                        self.fail("Pending draw did not populate its prize cell")
+                    self.assertEqual(
+                        prize_item.text(),
+                        "No active prize for this milestone",
+                    )
+                    self.assertTrue(screen._draw_prize_button.isEnabled())
+                finally:
+                    screen.close()
                 with self.assertRaisesRegex(ValueError, "No active prizes"):
                     manager.draw_prize(draw_id, admin_role)
                 manager.add_prize("Active fifth", "5", True, admin_role)
@@ -501,7 +639,9 @@ class LoyaltyCardPageTests(unittest.TestCase):
                 prize_page = LoyaltyWebServer(
                     Path(folder) / "prizes.sqlite"
                 )._card_page(*phone_card)
-                self.assertIn(str(result["prize_name"]), prize_page)
+                self.assertIn(
+                    f"You won: {result['prize_name']}!", prize_page
+                )
                 manager.mark_prize_given(draw_id, admin_role)
                 self.assertEqual(
                     manager.get_prize_draws(email)[0]["status"], "Given"

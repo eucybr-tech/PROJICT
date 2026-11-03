@@ -311,7 +311,8 @@ class LoyaltyWebServer:
                 )
             elif draw["status"] in {"Drawn", "Given"} and draw["prize_name"]:
                 reward_lines.append(
-                    f'<p class="prize">{html.escape(str(draw["prize_name"]))}</p>'
+                    f'<p class="prize">You won: '
+                    f'{html.escape(str(draw["prize_name"]))}!</p>'
                 )
         reward_message = "".join(reward_lines)
         last_day = calendar.monthrange(current_date.year, current_date.month)[1]

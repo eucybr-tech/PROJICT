@@ -160,8 +160,10 @@ class ReportPaymentsScreen(BasePage):
                     f"{status.replace('_', ' ').title()}: {count}"
                     for status, count in counts.items()
                 )
-                + f"\nCancellation fees recorded: "
+                + f"\nCancellation fees charged: "
                 f"₱ {status_result['cancellation_fees']:,.2f}"
+                + f"\nCancellation-fee income: "
+                f"₱ {status_result['cancellation_fee_income']:,.2f}"
             )
             self._summary_label.setText(
                 f"Revenue (payments received): ₱ {revenue:,.2f}    "
@@ -218,6 +220,10 @@ class ReportPaymentsScreen(BasePage):
                         item.setData(
                             Qt.ItemDataRole.UserRole, record["appointment_id"]
                         )
+                        item.setData(
+                            Qt.ItemDataRole.UserRole + 1,
+                            record["payment_type"],
+                        )
                     if column == 5 and isinstance(value, (int, float)) and value > 0:
                         font = item.font()
                         font.setBold(True)
@@ -252,8 +258,12 @@ class ReportPaymentsScreen(BasePage):
     def _record_payment(self, row: int, _column: int) -> None:
         item = self._payments_table.item(row, 0)
         appointment_id = item.data(Qt.ItemDataRole.UserRole) if item else None
+        payment_type = (
+            item.data(Qt.ItemDataRole.UserRole + 1) if item is not None else None
+        )
         if isinstance(appointment_id, int) and self._appointment_panel.record_payment_for_appointment(
-            appointment_id
+            appointment_id,
+            payment_type if isinstance(payment_type, str) else "appointment",
         ):
             self._refresh_payments()
             self._refresh_reports()

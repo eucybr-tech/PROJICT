@@ -42,6 +42,14 @@ class StudioSettingsManager:
         role: User | None = None,
     ) -> StudioSettings:
         self._require_admin(role)
+        if review_url is not None:
+            if not isinstance(review_url, str):
+                raise TypeError("review_url must be a string")
+            review_url = review_url.strip()
+            if review_url and not review_url.startswith(("http://", "https://")):
+                raise ValueError(
+                    "Review URL must start with http:// or https://"
+                )
         current = self.get_settings()
         settings = StudioSettings(
             default_travel_fee,

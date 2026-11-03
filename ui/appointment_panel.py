@@ -883,10 +883,21 @@ class LatePolicyDialog(ScrollableDialog):
 class PaymentDialog(ScrollableDialog):
     """Edit the recorded payment totals and preview their computed balance."""
 
-    def __init__(self, appointment: Appointment, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        appointment: Appointment,
+        parent: QWidget | None = None,
+        *,
+        cancellation_fee: bool = False,
+    ) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Record payment")
+        self.setWindowTitle(
+            "Record cancellation fee payment"
+            if cancellation_fee
+            else "Record payment"
+        )
         self._appointment = appointment
+        self._cancellation_fee_payment_method: QComboBox | None = None
         self._amount_paid = self._create_money_input(appointment.amount_paid)
         self._discount = self._create_money_input(appointment.discount)
         self._travel_fee = self._create_money_input(appointment.travel_fee)
@@ -896,11 +907,24 @@ class PaymentDialog(ScrollableDialog):
         self._balance_label = QLabel()
 
         form = QFormLayout()
-        form.addRow("Service price", QLabel(f"₱ {appointment.total_price:,.2f}"))
-        form.addRow("Amount paid to date", self._amount_paid)
-        form.addRow("Discount", self._discount)
-        form.addRow("Travel fee", self._travel_fee)
-        form.addRow("Payment note", self._payment_note)
+        if cancellation_fee:
+            self._cancellation_fee_payment_method = QComboBox()
+            self._cancellation_fee_payment_method.addItems(["Cash", "QR"])
+            form.addRow(
+                "Cancellation fee",
+                QLabel(f"₱ {appointment.cancellation_fee:,.2f}"),
+            )
+            form.addRow("Payment method", self._cancellation_fee_payment_method)
+            self._amount_paid.setVisible(False)
+            self._discount.setVisible(False)
+            self._travel_fee.setVisible(False)
+            self._payment_note.setVisible(False)
+        else:
+            form.addRow("Service price", QLabel(f"₱ {appointment.total_price:,.2f}"))
+            form.addRow("Amount paid to date", self._amount_paid)
+            form.addRow("Discount", self._discount)
+            form.addRow("Travel fee", self._travel_fee)
+            form.addRow("Payment note", self._payment_note)
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Save
             | QDialogButtonBox.StandardButton.Cancel
@@ -908,17 +932,25 @@ class PaymentDialog(ScrollableDialog):
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         footer = QHBoxLayout()
-        footer.addWidget(QLabel("Final price:"))
+        final_price_title = QLabel("Final price:")
+        footer.addWidget(final_price_title)
         footer.addWidget(self._final_price_label)
         footer.addSpacing(12)
-        footer.addWidget(QLabel("Balance:"))
+        balance_title = QLabel("Balance:")
+        footer.addWidget(balance_title)
         footer.addWidget(self._balance_label)
         footer.addStretch()
         footer.addWidget(buttons)
         self.set_dialog_layout(form, footer)
-        for input_widget in (self._amount_paid, self._discount, self._travel_fee):
-            input_widget.valueChanged.connect(self._update_preview)
-        self._update_preview()
+        if not cancellation_fee:
+            for input_widget in (self._amount_paid, self._discount, self._travel_fee):
+                input_widget.valueChanged.connect(self._update_preview)
+            self._update_preview()
+        else:
+            final_price_title.setVisible(False)
+            self._final_price_label.setVisible(False)
+            balance_title.setVisible(False)
+            self._balance_label.setVisible(False)
 
     @staticmethod
     def _create_money_input(value: float) -> QDoubleSpinBox:
@@ -937,6 +969,12 @@ class PaymentDialog(ScrollableDialog):
             self._travel_fee.value(),
             self._payment_note.toPlainText().strip(),
         )
+
+    @property
+    def cancellation_fee_payment_method(self) -> str:
+        if self._cancellation_fee_payment_method is None:
+            raise RuntimeError("This dialog is not for a cancellation fee payment")
+        return str(self._cancellation_fee_payment_method.currentText())
 
     def _update_preview(self, *_signal_args: object) -> None:
         final_price = (
@@ -1341,7 +1379,11 @@ class AppointmentPanel(QWidget):
             return
         self.record_payment_for_appointment(appointment.appointment_id)
 
-    def record_payment_for_appointment(self, appointment_id: int) -> bool:
+    def record_payment_for_appointment(
+        self,
+        appointment_id: int,
+        payment_type: str = "appointment",
+    ) -> bool:
         if not self._can_record_payments:
             QMessageBox.warning(
                 self, "Permission denied", "Only an Admin can record payments."
@@ -1357,6 +1399,50 @@ class AppointmentPanel(QWidget):
             self._show_error(
                 "Could not record payment",
                 ValueError("The appointment has not been saved"),
+            )
+            return False
+        if payment_type == "appointment" and (
+            appointment.status is AppointmentStatus.CANCELLED
+            and appointment.cancellation_fee > 0
+        ):
+            payment_type = "cancellation_fee"
+        if payment_type == "cancellation_fee":
+            if appointment.cancellation_fee <= 0:
+                QMessageBox.information(
+                    self,
+                    "Payment unavailable",
+                    "No cancellation fee is due for this appointment.",
+                )
+                return False
+            dialog = PaymentDialog(
+                appointment,
+                self,
+                cancellation_fee=True,
+            )
+            if dialog.exec() != QDialog.DialogCode.Accepted:
+                return False
+            try:
+                self._appointment_manager.record_cancellation_fee_payment(
+                    saved_appointment_id,
+                    dialog.cancellation_fee_payment_method,
+                    self._role,
+                )
+            except (
+                ValueError,
+                TypeError,
+                KeyError,
+                PermissionError,
+                sqlite3.Error,
+            ) as error:
+                self._show_error("Could not record cancellation fee payment", error)
+                return False
+            self.refresh()
+            self._select_appointment(saved_appointment_id)
+            return True
+        if payment_type != "appointment":
+            self._show_error(
+                "Could not record payment",
+                ValueError("Unknown payment type"),
             )
             return False
         if appointment.status not in (
@@ -1988,8 +2074,14 @@ class AppointmentPanel(QWidget):
         if self._can_record_payments:
             self._record_payment_button.setEnabled(
                 appointment is not None
-                and appointment.status
-                in (AppointmentStatus.CONFIRMED, AppointmentStatus.COMPLETED)
+                and (
+                    appointment.status
+                    in (AppointmentStatus.CONFIRMED, AppointmentStatus.COMPLETED)
+                    or (
+                        appointment.status is AppointmentStatus.CANCELLED
+                        and appointment.cancellation_fee > 0
+                    )
+                )
             )
             self._edit_travel_fee_button.setEnabled(
                 appointment is not None

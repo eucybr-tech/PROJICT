@@ -1,0 +1,9 @@
+[33mbf87e4f[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmaster[m[33m)[m Add account login; Admin can open Staff view
+[33mf1cdd67[m Hide prices and deposit from Staff
+[33m205c0ef[m Use full name in appointment emails
+[33mb4ee51c[m Add map link for Get Directions
+[33mb8e962b[m Update email template: book again link, font size, calendar invite
+[33m4039699[m Add appointment emails and load .env
+[33m58451f5[m Redesign loyalty card pages
+[33mdcff773[m Stamp QR works on phone
+[33m40bb08e[m Working version before defense

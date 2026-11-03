@@ -123,6 +123,16 @@ class Database:
                 FOREIGN KEY (client_email) REFERENCES clients(email),
                 FOREIGN KEY (service_id) REFERENCES services(service_id)
             );
+            CREATE TABLE IF NOT EXISTS cancellation_fee_payments (
+                appointment_id INTEGER PRIMARY KEY,
+                amount REAL NOT NULL CHECK (amount > 0),
+                payment_method TEXT NOT NULL CHECK (
+                    payment_method IN ('Cash', 'QR')
+                ),
+                paid_at TEXT NOT NULL,
+                FOREIGN KEY (appointment_id)
+                    REFERENCES appointments(appointment_id) ON DELETE CASCADE
+            );
             CREATE TABLE IF NOT EXISTS loyalty_cards (
                 client_email TEXT PRIMARY KEY COLLATE NOCASE,
                 stamps INTEGER NOT NULL DEFAULT 0 CHECK (stamps >= 0),
@@ -224,10 +234,9 @@ class Database:
                 map_link_url TEXT NOT NULL DEFAULT '',
                 loyalty_terms TEXT NOT NULL DEFAULT
                     'This loyalty card is non-transferable.
-Earn sticker for every minimum spend of P500 per visit.
-Earn 1 prize draw for every 5 stickers collected!
-Card must be presented upon purchase to receive sticker.
-Loyalty cards are valid only until expiry date'
+Earn a sticker for every minimum spend of P500.
+Earn a prize draw when you reach 5 stickers and 10 stickers!
+Card must be presented upon purchase to receive sticker.'
             );
             CREATE TABLE IF NOT EXISTS weekly_hours (
                 weekday INTEGER PRIMARY KEY CHECK (weekday BETWEEN 0 AND 6),
@@ -596,10 +605,9 @@ Loyalty cards are valid only until expiry date'
                 "map_link_url": "TEXT NOT NULL DEFAULT ''",
                 "loyalty_terms": (
                     "TEXT NOT NULL DEFAULT 'This loyalty card is non-transferable.\n"
-                    "Earn sticker for every minimum spend of P500 per visit.\n"
-                    "Earn 1 prize draw for every 5 stickers collected!\n"
-                    "Card must be presented upon purchase to receive sticker.\n"
-                    "Loyalty cards are valid only until expiry date'"
+                    "Earn a sticker for every minimum spend of P500.\n"
+                    "Earn a prize draw when you reach 5 stickers and 10 stickers!\n"
+                    "Card must be presented upon purchase to receive sticker.'"
                 ),
             },
         }
@@ -636,6 +644,23 @@ Loyalty cards are valid only until expiry date'
                     WHERE owner_provider_name = ''
                     """
                 )
+            if table_name == "studio_settings":
+                old_default_terms = (
+                    "This loyalty card is non-transferable.\n"
+                    "Earn sticker for every minimum spend of P500 per visit.\n"
+                    "Earn 1 prize draw for every 5 stickers collected!\n"
+                    "Card must be presented upon purchase to receive sticker.\n"
+                    "Loyalty cards are valid only until expiry date"
+                )
+                with self._connection:
+                    self._connection.execute(
+                        """
+                        UPDATE studio_settings
+                        SET loyalty_terms = ?
+                        WHERE loyalty_terms = ?
+                        """,
+                        (StudioSettings().loyalty_terms, old_default_terms),
+                    )
 
     def _migrate_queue_columns(self) -> None:
         existing_columns = {
@@ -1144,21 +1169,101 @@ Loyalty cards are valid only until expiry date'
     def get_pending_payment_rows(self) -> list[dict[str, object]]:
         rows = self._connection.execute(
             """
-            SELECT a.appointment_id, a.appointment_time, a.total_price,
-                   a.travel_fee, a.discount, a.amount_paid,
-                   a.total_price + a.travel_fee - a.discount AS final_price,
-                   a.total_price + a.travel_fee - a.discount - a.amount_paid AS balance,
-                   c.name AS client_name, c.email AS client_email,
-                   s.name AS service_name
-            FROM appointments AS a
-            JOIN clients AS c ON c.email = a.client_email
-            JOIN services AS s ON s.service_id = a.service_id
-            WHERE a.status = 'COMPLETED'
-              AND a.total_price + a.travel_fee - a.discount - a.amount_paid > 0
-            ORDER BY a.appointment_time, a.appointment_id
+            SELECT * FROM (
+                SELECT a.appointment_id, a.appointment_time,
+                       a.total_price, a.travel_fee, a.discount, a.amount_paid,
+                       a.total_price + a.travel_fee - a.discount AS final_price,
+                       a.total_price + a.travel_fee - a.discount - a.amount_paid
+                           AS balance,
+                       c.name AS client_name, c.email AS client_email,
+                       s.name AS service_name, 'appointment' AS payment_type
+                FROM appointments AS a
+                JOIN clients AS c ON c.email = a.client_email
+                JOIN services AS s ON s.service_id = a.service_id
+                WHERE a.status = 'COMPLETED'
+                  AND a.total_price + a.travel_fee - a.discount - a.amount_paid > 0
+
+                UNION ALL
+
+                SELECT a.appointment_id, a.appointment_time,
+                       a.total_price, 0 AS travel_fee, 0 AS discount,
+                       0 AS amount_paid, a.cancellation_fee AS final_price,
+                       a.cancellation_fee AS balance,
+                       c.name AS client_name, c.email AS client_email,
+                       'Cancellation fee' AS service_name,
+                       'cancellation_fee' AS payment_type
+                FROM appointments AS a
+                JOIN clients AS c ON c.email = a.client_email
+                LEFT JOIN cancellation_fee_payments AS payment
+                  ON payment.appointment_id = a.appointment_id
+                WHERE a.cancellation_fee > 0
+                  AND payment.appointment_id IS NULL
+            )
+            ORDER BY appointment_time, appointment_id, payment_type
             """
         ).fetchall()
         return [dict(row) for row in rows]
+
+    def record_cancellation_fee_payment(
+        self, appointment_id: int, payment_method: str, admin_role: str
+    ) -> dict[str, object]:
+        if admin_role != "Admin":
+            raise PermissionError("Only Admin can record cancellation fee payments")
+        if not isinstance(payment_method, str) or payment_method not in {"Cash", "QR"}:
+            raise ValueError("Payment method must be Cash or QR")
+        if isinstance(appointment_id, bool) or not isinstance(appointment_id, int):
+            raise TypeError("appointment_id must be an integer")
+        paid_at = datetime.now(timezone.utc).isoformat()
+        with self._connection:
+            self._connection.execute("BEGIN IMMEDIATE")
+            appointment = self._connection.execute(
+                """
+                SELECT cancellation_fee FROM appointments
+                WHERE appointment_id = ?
+                """,
+                (appointment_id,),
+            ).fetchone()
+            if appointment is None:
+                raise KeyError(f"No appointment found with ID {appointment_id}")
+            amount = float(appointment["cancellation_fee"])
+            if amount <= 0:
+                raise ValueError("No cancellation fee is due for this appointment")
+            existing = self._connection.execute(
+                """
+                SELECT 1 FROM cancellation_fee_payments
+                WHERE appointment_id = ?
+                """,
+                (appointment_id,),
+            ).fetchone()
+            if existing is not None:
+                raise ValueError("Cancellation fee has already been paid")
+            self._connection.execute(
+                """
+                INSERT INTO cancellation_fee_payments
+                    (appointment_id, amount, payment_method, paid_at)
+                VALUES (?, ?, ?, ?)
+                """,
+                (appointment_id, amount, payment_method, paid_at),
+            )
+        return {
+            "appointment_id": appointment_id,
+            "amount": amount,
+            "payment_method": payment_method,
+            "paid_at": paid_at,
+        }
+
+    def get_report_cancellation_fee_income(
+        self, start_date: date, end_date: date
+    ) -> float:
+        row = self._connection.execute(
+            """
+            SELECT COALESCE(SUM(amount), 0) AS income
+            FROM cancellation_fee_payments
+            WHERE date(paid_at) BETWEEN ? AND ?
+            """,
+            (start_date.isoformat(), end_date.isoformat()),
+        ).fetchone()
+        return float(row["income"])
 
     def get_pending_request_count(self) -> int:
         row = self._connection.execute(
@@ -1719,7 +1824,7 @@ Loyalty cards are valid only until expiry date'
         )
         milestone = stamps_before + 1
         if milestone in (5, 10):
-            self._connection.execute(
+            draw_cursor = self._connection.execute(
                 """
                 INSERT OR IGNORE INTO loyalty_prize_draws
                     (client_email, card_month, milestone, status, created_at)
@@ -1732,6 +1837,32 @@ Loyalty cards are valid only until expiry date'
                     created_at.isoformat(),
                 ),
             )
+            if draw_cursor.rowcount:
+                prizes = self._connection.execute(
+                    """
+                    SELECT name FROM loyalty_prizes
+                    WHERE active = 1 AND milestone IN (?, 'both')
+                    ORDER BY prize_id
+                    """,
+                    (str(milestone),),
+                ).fetchall()
+                if prizes:
+                    prize = secrets.choice(prizes)
+                    self._connection.execute(
+                        """
+                        UPDATE loyalty_prize_draws
+                        SET status = 'Drawn', prize_name = ?, drawn_at = ?
+                        WHERE client_email = ? AND card_month = ?
+                          AND milestone = ? AND status = 'Pending'
+                        """,
+                        (
+                            prize["name"],
+                            created_at.isoformat(),
+                            card["client_email"],
+                            card_month,
+                            milestone,
+                        ),
+                    )
         return True
 
     def award_next_unstamped_completed_visit(
@@ -1757,22 +1888,28 @@ Loyalty cards are valid only until expiry date'
                 """,
                 (card_row["client_email"],),
             ).fetchall()
-            appointment_id = next(
+            unstamped_appointments = [
+                row
+                for row in appointments
+                if not self._appointment_is_stamped(row["appointment_id"])
+                and not self._monthly_stamp_exists(row["appointment_id"])
+            ]
+            minimum_spend = self.get_minimum_spend_per_appointment()
+            appointment_row = next(
                 (
-                    row["appointment_id"]
-                    for row in appointments
-                    if not self._appointment_is_stamped(row["appointment_id"])
-                    and not self._monthly_stamp_exists(row["appointment_id"])
+                    row
+                    for row in unstamped_appointments
+                    if float(row["total_price"]) >= minimum_spend
                 ),
                 None,
             )
-            if appointment_id is None:
+            if appointment_row is None:
+                if unstamped_appointments:
+                    self._ensure_appointment_qualifies(
+                        float(unstamped_appointments[0]["total_price"])
+                    )
                 return None
-            appointment_row = next(
-                row for row in appointments
-                if row["appointment_id"] == appointment_id
-            )
-            self._ensure_appointment_qualifies(float(appointment_row["total_price"]))
+            appointment_id = int(appointment_row["appointment_id"])
             if not self._record_stamp_in_transaction(
                 appointment_id,
                 card_code.strip(),

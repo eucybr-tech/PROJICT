@@ -217,6 +217,7 @@ class NotificationService:
         map_link_url: str = "",
         full_name: str = "",
     ) -> None:
+        review_url = self._validated_http_url(review_url)
         when = appointment_time.strftime("%A, %B %d, %Y at %I:%M %p")
         reference = f"PS-{appointment_id:06d}"
         address_directions_url = (
