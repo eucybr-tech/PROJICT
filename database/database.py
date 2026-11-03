@@ -280,6 +280,16 @@ Loyalty cards are valid only until expiry date'
                 FOREIGN KEY (client_email) REFERENCES clients(email),
                 FOREIGN KEY (appointment_id) REFERENCES appointments(appointment_id)
             );
+            CREATE TABLE IF NOT EXISTS accounts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT NOT NULL UNIQUE COLLATE NOCASE,
+                display_name TEXT NOT NULL,
+                role TEXT NOT NULL CHECK (role IN ('ADMIN', 'STAFF')),
+                password_hash TEXT NOT NULL,
+                salt TEXT NOT NULL,
+                active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+                created_at TEXT NOT NULL
+            );
             """
         )
         if not price_extras_table_exists:
@@ -298,6 +308,7 @@ Loyalty cards are valid only until expiry date'
                         ("Hand-painted", 350),
                     ],
                 )
+
         for weekday in range(7):
             self._connection.execute(
                 """
@@ -391,6 +402,141 @@ Loyalty cards are valid only until expiry date'
                         ),
                     ],
                 )
+
+    def get_account_auth(self, username: str) -> dict[str, object] | None:
+        row = self._connection.execute(
+            """
+            SELECT id, username, display_name, role, password_hash, salt, active
+            FROM accounts WHERE username = ? COLLATE NOCASE
+            """,
+            (username,),
+        ).fetchone()
+        return dict(row) if row is not None else None
+
+    def get_account_auth_by_id(self, account_id: int) -> dict[str, object] | None:
+        row = self._connection.execute(
+            """
+            SELECT id, username, display_name, role, password_hash, salt, active
+            FROM accounts WHERE id = ?
+            """,
+            (account_id,),
+        ).fetchone()
+        return dict(row) if row is not None else None
+
+    def list_accounts(self) -> list[dict[str, object]]:
+        rows = self._connection.execute(
+            """
+            SELECT id, username, display_name, role, active, created_at
+            FROM accounts ORDER BY username COLLATE NOCASE
+            """
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    def count_active_accounts(self, role: str) -> int:
+        row = self._connection.execute(
+            "SELECT COUNT(*) AS count FROM accounts WHERE role = ? AND active = 1",
+            (role,),
+        ).fetchone()
+        return int(row["count"])
+
+    def create_account(
+        self,
+        username: str,
+        display_name: str,
+        role: str,
+        password_hash: str,
+        salt: str,
+    ) -> int:
+        with self._connection:
+            cursor = self._connection.execute(
+                """
+                INSERT INTO accounts
+                    (username, display_name, role, password_hash, salt, active, created_at)
+                VALUES (?, ?, ?, ?, ?, 1, ?)
+                """,
+                (
+                    username,
+                    display_name,
+                    role,
+                    password_hash,
+                    salt,
+                    datetime.now(timezone.utc).isoformat(),
+                ),
+            )
+        return int(cursor.lastrowid)
+
+    def create_first_admin_account(
+        self,
+        username: str,
+        display_name: str,
+        password_hash: str,
+        salt: str,
+    ) -> int:
+        self._connection.execute("BEGIN IMMEDIATE")
+        try:
+            if self.count_active_accounts("ADMIN") > 0:
+                raise ValueError("An active Admin account already exists")
+            cursor = self._connection.execute(
+                """
+                INSERT INTO accounts
+                    (username, display_name, role, password_hash, salt, active, created_at)
+                VALUES (?, ?, 'ADMIN', ?, ?, 1, ?)
+                """,
+                (
+                    username,
+                    display_name,
+                    password_hash,
+                    salt,
+                    datetime.now(timezone.utc).isoformat(),
+                ),
+            )
+            account_id = int(cursor.lastrowid)
+            self._connection.commit()
+            return account_id
+        except BaseException:
+            self._connection.rollback()
+            raise
+
+    def update_account_profile(
+        self,
+        account_id: int,
+        display_name: str,
+        role: str,
+        active: bool,
+    ) -> None:
+        with self._connection:
+            cursor = self._connection.execute(
+                """
+                UPDATE accounts SET display_name = ?, role = ?, active = ?
+                WHERE id = ?
+                """,
+                (display_name, role, int(active), account_id),
+            )
+            if cursor.rowcount != 1:
+                raise KeyError("Account not found")
+            if self.count_active_accounts("ADMIN") == 0:
+                raise ValueError("The last active Admin account must remain active")
+
+    def delete_account(self, account_id: int) -> None:
+        with self._connection:
+            cursor = self._connection.execute(
+                "DELETE FROM accounts WHERE id = ?", (account_id,)
+            )
+            if cursor.rowcount != 1:
+                raise KeyError("Account not found")
+            if self.count_active_accounts("ADMIN") == 0:
+                raise ValueError("The last active Admin account cannot be deleted")
+
+    def update_account_password(
+        self, account_id: int, password_hash: str, salt: str
+    ) -> None:
+        with self._connection:
+            cursor = self._connection.execute(
+                "UPDATE accounts SET password_hash = ?, salt = ? WHERE id = ?",
+                (password_hash, salt, account_id),
+            )
+            if cursor.rowcount != 1:
+                raise KeyError("Account not found")
 
     def close(self) -> None:
         self._connection.close()

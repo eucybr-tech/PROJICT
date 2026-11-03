@@ -8,11 +8,20 @@ from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PyQt6.QtWidgets import QApplication, QLabel
+from PyQt6.QtWidgets import QApplication, QLabel, QPushButton
 
 from database import Database
 from database.database import StampNotQualifiedError
-from models import Appointment, AppointmentStatus, Customer, LoyaltySettings, Service
+from models import (
+    AccountUser,
+    Admin,
+    Appointment,
+    AppointmentStatus,
+    Customer,
+    LoyaltySettings,
+    Service,
+    Staff,
+)
 from services.loyalty_manager import LoyaltyManager
 from services.studio_settings_manager import StudioSettingsManager
 from services.loyalty_web_server import LoyaltyWebServer
@@ -37,11 +46,13 @@ class LoyaltyCardPageTests(unittest.TestCase):
         if service.service_id is None:
             raise AssertionError("Loyalty test service was not saved")
         settings = database.get_studio_settings()
+        admin_role = Admin("Test Admin", "test-admin@example.test")
         StudioSettingsManager(database).update_settings(
             settings.default_travel_fee,
             settings.travel_buffer_minutes,
             settings.service_area_note,
             minimum_spend_per_appointment=minimum_spend,
+            role=admin_role,
         )
         return database, LoyaltyManager(database), email, service.service_id
 
@@ -229,7 +240,10 @@ class LoyaltyCardPageTests(unittest.TestCase):
                     screen.close()
                     self.application.processEvents()
 
-                admin_screen = StudioSettingsScreen(settings_manager)
+                admin_screen = StudioSettingsScreen(
+                    settings_manager,
+                    role=Admin("Test Admin", "test-admin@example.test"),
+                )
                 admin_screen._loyalty_facebook.setText("@test & <handle>")
                 admin_screen._owner_provider_name.setText("Provider Name")
                 admin_screen._review_url.setText("https://reviews.example.test/")
@@ -463,15 +477,17 @@ class LoyaltyCardPageTests(unittest.TestCase):
                     manager.add_stamp_for_card_code(card.card_code or "")
                 draw = manager.get_prize_draws(email)[0]
                 draw_id = int(draw["draw_id"])
-                manager.add_prize("Inactive fifth", "5", False, "Admin")
-                manager.add_prize("Tenth only", "10", True, "Admin")
+                admin_role = Admin("Test Admin", "test-admin@example.test")
+                staff_role = Staff("Test Staff", "test-staff@example.test")
+                manager.add_prize("Inactive fifth", "5", False, admin_role)
+                manager.add_prize("Tenth only", "10", True, admin_role)
                 with self.assertRaisesRegex(ValueError, "No active prizes"):
-                    manager.draw_prize(draw_id, "Admin")
-                manager.add_prize("Active fifth", "5", True, "Admin")
-                manager.add_prize("Both milestones", "both", True, "Admin")
+                    manager.draw_prize(draw_id, admin_role)
+                manager.add_prize("Active fifth", "5", True, admin_role)
+                manager.add_prize("Both milestones", "both", True, admin_role)
                 with self.assertRaises(PermissionError):
-                    manager.draw_prize(draw_id, "Staff")
-                result = manager.draw_prize(draw_id, "Admin")
+                    manager.draw_prize(draw_id, staff_role)
+                result = manager.draw_prize(draw_id, admin_role)
                 self.assertIn(
                     result["prize_name"],
                     {"Active fifth", "Both milestones"},
@@ -486,7 +502,7 @@ class LoyaltyCardPageTests(unittest.TestCase):
                     Path(folder) / "prizes.sqlite"
                 )._card_page(*phone_card)
                 self.assertIn(str(result["prize_name"]), prize_page)
-                manager.mark_prize_given(draw_id, "Admin")
+                manager.mark_prize_given(draw_id, admin_role)
                 self.assertEqual(
                     manager.get_prize_draws(email)[0]["status"], "Given"
                 )
@@ -645,6 +661,26 @@ class LoyaltyCardPageTests(unittest.TestCase):
                 loyalty_manager = LoyaltyManager(
                     database, qr_codes_directory=root / "qr"
                 )
+                from services.account_manager import AccountManager
+
+                account_manager = AccountManager(database)
+                admin_user = account_manager.create_first_admin(
+                    "test_admin",
+                    "Test Admin",
+                    "TemporaryTestPass123",
+                    "TemporaryTestPass123",
+                )
+                staff_id = account_manager.create_account(
+                    admin_user,
+                    "test_staff",
+                    "Test Staff",
+                    "STAFF",
+                    "TemporaryStaffPass123",
+                    "TemporaryStaffPass123",
+                )
+                staff_user = AccountUser(
+                    staff_id, "test_staff", "Test Staff", "STAFF"
+                )
                 settings_manager = StudioSettingsManager(database)
                 schedule_manager = ScheduleManager(database)
                 report_manager = ReportManager(database)
@@ -665,6 +701,16 @@ class LoyaltyCardPageTests(unittest.TestCase):
                 queue_manager = QueueManager(database, appointment_manager)
                 web_server = LoyaltyWebServer(database.database_path)
 
+                admin_staff_window = StaffWindow(
+                    client_manager,
+                    appointment_manager,
+                    pricing_calculator,
+                    queue_manager,
+                    report_manager,
+                    settings_manager,
+                    loyalty_manager,
+                    account_user=admin_user,
+                )
                 windows = [
                     CustomerWindow(
                         queue_manager,
@@ -685,7 +731,9 @@ class LoyaltyCardPageTests(unittest.TestCase):
                         report_manager,
                         settings_manager,
                         loyalty_manager,
+                        account_user=staff_user,
                     ),
+                    admin_staff_window,
                     AdminWindow(
                         service_manager,
                         pricing_calculator,
@@ -699,12 +747,52 @@ class LoyaltyCardPageTests(unittest.TestCase):
                         report_manager,
                         price_extra_manager,
                         web_server,
+                        account_user=admin_user,
+                        account_manager=account_manager,
                     ),
                 ]
                 for window in windows:
                     window.show()
                     self.application.processEvents()
                     self.assertTrue(window.isVisible())
+                staff_window = windows[1]
+                staff_button_labels = {
+                    button.text()
+                    for button in staff_window.findChildren(QPushButton)
+                }
+                self.assertNotIn("Back to Admin", staff_button_labels)
+                self.assertFalse(
+                    any(
+                        label.text().startswith("Viewing as Staff")
+                        for label in staff_window.findChildren(QLabel)
+                    )
+                )
+                self.assertIn("Log out", staff_button_labels)
+
+                panel = admin_staff_window._appointment_page.appointment_panel
+                self.assertNotIn("total_price", panel._table_columns)
+                self.assertNotIn("travel_fee", panel._table_columns)
+                self.assertNotIn("cancellation_fee", panel._table_columns)
+                client_panel = admin_staff_window._customer_management_page.client_panel
+                client_headers = [
+                    client_panel._client_table.horizontalHeaderItem(index).text()
+                    for index in range(client_panel._client_table.columnCount())
+                ]
+                self.assertNotIn("Deposit", client_headers)
+                self.assertTrue(client_panel._mark_deposit_paid_button.isHidden())
+                admin_staff_buttons = {
+                    button.text()
+                    for button in admin_staff_window.findChildren(QPushButton)
+                }
+                self.assertIn("Back to Admin", admin_staff_buttons)
+                self.assertIn("Log out", admin_staff_buttons)
+                self.assertIn(
+                    "Viewing as Staff (logged in as Test Admin)",
+                    {
+                        label.text()
+                        for label in admin_staff_window.findChildren(QLabel)
+                    },
+                )
             finally:
                 for window in windows:
                     window.close()

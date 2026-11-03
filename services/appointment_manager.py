@@ -347,9 +347,7 @@ class AppointmentManager:
         role: User | None = None,
     ) -> Appointment:
         if waive_fee:
-            if role is None:
-                raise PermissionError("Only an Admin can waive a cancellation fee")
-            self._require_permission(role, "record_payments")
+            self._require_admin(role, "waive a cancellation fee")
         appointment = self.get_appointment(appointment_id)
         if (
             status is AppointmentStatus.CONFIRMED
@@ -399,7 +397,10 @@ class AppointmentManager:
         late_confirmation: bool = False,
         waive_fee: bool = False,
         allow_outside_schedule: bool = False,
+        role: User | None = None,
     ) -> Appointment:
+        if waive_fee:
+            self._require_admin(role, "waive a rescheduling fee")
         if not isinstance(new_time, datetime):
             raise TypeError("new_time must be a datetime")
         appointment = self.get_appointment(appointment_id)
@@ -516,6 +517,11 @@ class AppointmentManager:
     def _require_permission(role: User, permission: str) -> None:
         if permission not in role.get_permissions():
             raise PermissionError(f"This role cannot {permission.replace('_', ' ')}")
+
+    @staticmethod
+    def _require_admin(role: User | None, action: str) -> None:
+        if not isinstance(role, User) or "view_payments" not in role.get_permissions():
+            raise PermissionError(f"Only an Admin can {action}")
 
     def _send_status_email(
         self,

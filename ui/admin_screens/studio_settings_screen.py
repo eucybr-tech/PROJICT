@@ -20,6 +20,7 @@ from PyQt6.QtWidgets import (
 
 from services.studio_settings_manager import StudioSettingsManager
 from services.loyalty_web_server import LoyaltyWebServer
+from models import User
 from ui.base_page import BasePage
 
 
@@ -31,9 +32,11 @@ class StudioSettingsScreen(BasePage):
         settings_manager: StudioSettingsManager,
         parent=None,
         loyalty_web_server: LoyaltyWebServer | None = None,
+        role: User | None = None,
     ) -> None:
         self._settings_manager = settings_manager
         self._loyalty_web_server = loyalty_web_server
+        self._role = role
         super().__init__({"studio_settings_manager": settings_manager}, parent)
         self.refresh()
         self._server_status_timer = QTimer(self)
@@ -172,7 +175,7 @@ class StudioSettingsScreen(BasePage):
             return
         try:
             port = self._loyalty_web_port.value()
-            self._settings_manager.set_loyalty_web_port(port)
+            self._settings_manager.set_loyalty_web_port(port, self._role)
             if (
                 self._loyalty_web_server is not None
                 and not self._loyalty_web_server.is_running
@@ -202,6 +205,7 @@ class StudioSettingsScreen(BasePage):
                 self._online_booking_url.text(),
                 self._minimum_spend_per_appointment.value(),
                 self._map_link_url.text(),
+                role=self._role,
             )
         except (sqlite3.Error, TypeError, ValueError) as error:
             QMessageBox.warning(self, "Invalid studio settings", str(error))
@@ -261,7 +265,7 @@ class StudioSettingsScreen(BasePage):
         try:
             if should_run:
                 port = self._loyalty_web_port.value()
-                self._settings_manager.set_loyalty_web_port(port)
+                self._settings_manager.set_loyalty_web_port(port, self._role)
                 server.configure_port(port)
                 server.start()
             else:

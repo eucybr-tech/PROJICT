@@ -1501,6 +1501,7 @@ class AppointmentPanel(QWidget):
                 late_confirmation=is_late,
                 waive_fee=waive_fee,
                 allow_outside_schedule=allow_outside_schedule,
+                role=self._role,
             )
         except (
             ValueError,

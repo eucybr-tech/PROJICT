@@ -2,7 +2,7 @@ from pathlib import Path
 
 from database import Database
 from database.database import StampNotQualifiedError
-from models import LoyaltyCard, LoyaltySettings
+from models import LoyaltyCard, LoyaltySettings, User
 
 
 class LoyaltyManager:
@@ -160,10 +160,11 @@ class LoyaltyManager:
         return self._database.get_loyalty_prizes()
 
     def add_prize(
-        self, name: str, milestone: str, active: bool, admin_role: str
+        self, name: str, milestone: str, active: bool, role: User
     ) -> int:
+        self._require_admin(role, "manage prizes")
         return self._database.add_loyalty_prize(
-            name, milestone, active, admin_role
+            name, milestone, active, role.get_role_name()
         )
 
     def update_prize(
@@ -172,14 +173,16 @@ class LoyaltyManager:
         name: str,
         milestone: str,
         active: bool,
-        admin_role: str,
+        role: User,
     ) -> None:
+        self._require_admin(role, "manage prizes")
         self._database.update_loyalty_prize(
-            prize_id, name, milestone, active, admin_role
+            prize_id, name, milestone, active, role.get_role_name()
         )
 
-    def remove_prize(self, prize_id: int, admin_role: str) -> None:
-        self._database.delete_loyalty_prize(prize_id, admin_role)
+    def remove_prize(self, prize_id: int, role: User) -> None:
+        self._require_admin(role, "manage prizes")
+        self._database.delete_loyalty_prize(prize_id, role.get_role_name())
 
     def get_prize_draws(
         self,
@@ -188,11 +191,22 @@ class LoyaltyManager:
     ) -> list[dict[str, object]]:
         return self._database.get_loyalty_prize_draws(email, card_month)
 
-    def draw_prize(self, draw_id: int, admin_role: str) -> dict[str, object]:
-        return self._database.draw_loyalty_prize(draw_id, admin_role)
+    def draw_prize(self, draw_id: int, role: User) -> dict[str, object]:
+        self._require_admin(role, "draw a prize")
+        return self._database.draw_loyalty_prize(
+            draw_id, role.get_role_name()
+        )
 
-    def mark_prize_given(self, draw_id: int, admin_role: str) -> None:
-        self._database.mark_loyalty_prize_given(draw_id, admin_role)
+    def mark_prize_given(self, draw_id: int, role: User) -> None:
+        self._require_admin(role, "mark a prize given")
+        self._database.mark_loyalty_prize_given(
+            draw_id, role.get_role_name()
+        )
+
+    @staticmethod
+    def _require_admin(role: User, action: str) -> None:
+        if not isinstance(role, User) or "view_payments" not in role.get_permissions():
+            raise PermissionError(f"Only an Admin can {action}")
 
     @staticmethod
     def _normalize_email(email: str) -> str:

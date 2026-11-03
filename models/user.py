@@ -87,6 +87,41 @@ class Staff(User):
         return "Staff Dashboard"
 
 
+class AccountUser(User):
+    """Authenticated account identity backed by the existing Admin/Staff roles."""
+
+    def __init__(
+        self,
+        account_id: int,
+        username: str,
+        display_name: str,
+        role: str,
+    ) -> None:
+        normalized_role = role.strip().upper() if isinstance(role, str) else ""
+        if normalized_role not in {"ADMIN", "STAFF"}:
+            raise ValueError("role must be ADMIN or STAFF")
+        if isinstance(account_id, bool) or not isinstance(account_id, int):
+            raise TypeError("account_id must be an integer")
+        super().__init__(display_name, f"{username}@accounts.local")
+        self.account_id = account_id
+        self.username = username
+        self.role = normalized_role
+        self._role_model: User = (
+            Admin(display_name, self.email)
+            if normalized_role == "ADMIN"
+            else Staff(display_name, self.email)
+        )
+
+    def get_permissions(self) -> tuple[str, ...]:
+        return self._role_model.get_permissions()
+
+    def get_role_name(self) -> str:
+        return self._role_model.get_role_name()
+
+    def get_dashboard_title(self) -> str:
+        return self._role_model.get_dashboard_title()
+
+
 class Customer(User):
     def __init__(
         self,

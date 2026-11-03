@@ -1,6 +1,6 @@
 from PyQt6.QtWidgets import QVBoxLayout
 
-from models import Staff
+from models import User
 from services.client_manager import ClientManager
 from ui.base_page import BasePage
 from ui.client_panel import ClientPanel
@@ -10,7 +10,7 @@ class StaffCustomerScreen(BasePage):
     def __init__(
         self,
         client_manager: ClientManager,
-        role: Staff,
+        role: User,
         parent=None,
     ) -> None:
         self._client_panel = ClientPanel(client_manager, role=role)

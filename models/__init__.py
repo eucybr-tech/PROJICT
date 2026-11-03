@@ -7,10 +7,11 @@ from .price_extra import PriceExtra
 from .studio_policy import StudioPolicy
 from .studio_settings import StudioSettings
 from .visit_type import VisitType
-from .user import Admin, Customer, Staff, User
+from .user import AccountUser, Admin, Customer, Staff, User
 
 __all__ = [
     "Admin",
+    "AccountUser",
     "Appointment",
     "AppointmentStatus",
     "format_duration",

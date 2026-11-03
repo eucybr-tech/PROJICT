@@ -141,12 +141,18 @@ class ReportPaymentsScreen(BasePage):
             return
         try:
             status_result = self._report_manager.status_counts(
-                start_date, end_date
+                start_date, end_date, self._role
             )
-            revenue = self._report_manager.revenue(start_date, end_date)
-            payments = self._report_manager.pending_payments()
-            by_service = self._report_manager.by_service(start_date, end_date)
-            by_visit = self._report_manager.by_visit_type(start_date, end_date)
+            revenue = self._report_manager.revenue(
+                start_date, end_date, self._role
+            )
+            payments = self._report_manager.pending_payments(self._role)
+            by_service = self._report_manager.by_service(
+                start_date, end_date, self._role
+            )
+            by_visit = self._report_manager.by_visit_type(
+                start_date, end_date, self._role
+            )
             counts = status_result["counts"]
             self._status_label.setText(
                 "Appointments by status: "
@@ -188,7 +194,7 @@ class ReportPaymentsScreen(BasePage):
 
     def _refresh_payments(self) -> None:
         try:
-            rows = self._report_manager.pending_payments()["appointments"]
+            rows = self._report_manager.pending_payments(self._role)["appointments"]
             self._payments_table.setRowCount(0)
             for record in rows:
                 row = self._payments_table.rowCount()

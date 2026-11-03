@@ -20,7 +20,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from models import Admin, Customer, Staff
+from models import Customer, User
 from services.client_manager import ClientManager
 from ui.scrollable_dialog import ScrollableDialog
 
@@ -111,12 +111,10 @@ class ClientPanel(QWidget):
     def __init__(
         self,
         client_manager: ClientManager,
-        role: Admin | Staff,
+        role: User,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
-        if not isinstance(role, (Admin, Staff)):
-            raise TypeError("role must be an Admin or Staff user")
         permissions = role.get_permissions()
         if "manage_clients" not in permissions:
             raise PermissionError("This role cannot manage clients")
@@ -137,7 +135,7 @@ class ClientPanel(QWidget):
         return self._client_manager
 
     @property
-    def role(self) -> Admin | Staff:
+    def role(self) -> User:
         return self._role
 
     def _build_ui(self) -> None:

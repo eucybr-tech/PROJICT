@@ -9,7 +9,7 @@ from unittest.mock import patch
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from database import Database
-from models import Appointment, AppointmentStatus, Customer, Service
+from models import Admin, Appointment, AppointmentStatus, Customer, Service
 from services.appointment_manager import AppointmentManager
 from services.loyalty_manager import LoyaltyManager
 from services.notification_service import NotificationService
@@ -140,6 +140,7 @@ class AppointmentEmailFlowTests(unittest.TestCase):
         if service.service_id is None:
             self.fail("Test service was not persisted")
         self.service_id = service.service_id
+        self.admin_role = Admin("Test Admin", "test-admin@example.test")
         self.sender = MockEmailSender()
         self.manager = AppointmentManager(
             self.database,
@@ -160,6 +161,7 @@ class AppointmentEmailFlowTests(unittest.TestCase):
             settings.service_area_note,
             online_booking_url="https://booking.example.test/",
             map_link_url="https://maps.example.test/studio",
+            role=self.admin_role,
         )
         appointment = self.manager.create_appointment(
             self.email,
@@ -832,6 +834,7 @@ class AppointmentEmailFlowTests(unittest.TestCase):
                 settings.travel_buffer_minutes,
                 settings.service_area_note,
                 map_link_url="javascript:alert(1)",
+                role=self.admin_role,
             )
 
     def test_special_characters_are_escaped_in_html(self) -> None:

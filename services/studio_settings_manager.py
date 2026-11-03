@@ -1,5 +1,5 @@
 from database import Database
-from models import StudioSettings
+from models import StudioSettings, User
 
 
 class StudioSettingsManager:
@@ -14,7 +14,8 @@ class StudioSettingsManager:
     def get_loyalty_web_port(self) -> int:
         return self._database.get_loyalty_web_port()
 
-    def set_loyalty_web_port(self, port: int) -> None:
+    def set_loyalty_web_port(self, port: int, role: User) -> None:
+        self._require_admin(role)
         self._database.set_loyalty_web_port(port)
 
     def update_settings(
@@ -38,7 +39,9 @@ class StudioSettingsManager:
         online_booking_url: str | None = None,
         minimum_spend_per_appointment: int | float | None = None,
         map_link_url: str | None = None,
+        role: User | None = None,
     ) -> StudioSettings:
+        self._require_admin(role)
         current = self.get_settings()
         settings = StudioSettings(
             default_travel_fee,
@@ -87,3 +90,8 @@ class StudioSettingsManager:
         )
         self._database.update_studio_settings(settings)
         return settings
+
+    @staticmethod
+    def _require_admin(role: User | None) -> None:
+        if not isinstance(role, User) or "view_payments" not in role.get_permissions():
+            raise PermissionError("Only an Admin can save Studio Settings")

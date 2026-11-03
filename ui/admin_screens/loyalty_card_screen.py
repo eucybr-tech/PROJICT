@@ -24,7 +24,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from models import Customer
+from models import Customer, User
 from services.loyalty_manager import LoyaltyManager
 from services.loyalty_web_server import LoyaltyWebServer
 from ui.base_page import BasePage
@@ -99,10 +99,12 @@ class LoyaltyCardScreen(BasePage):
     def __init__(
         self,
         loyalty_manager: LoyaltyManager,
+        role: User,
         parent=None,
         loyalty_web_server: LoyaltyWebServer | None = None,
     ) -> None:
         self._loyalty_manager = loyalty_manager
+        self._role = role
         self._loyalty_web_server = loyalty_web_server
         self._clients: list[Customer] = []
         super().__init__({"loyalty_manager": loyalty_manager}, parent)
@@ -425,10 +427,12 @@ class LoyaltyCardScreen(BasePage):
         active = dialog.active_input.isChecked()
         try:
             if prize_id is None:
-                self._loyalty_manager.add_prize(name, milestone, active, "Admin")
+                self._loyalty_manager.add_prize(
+                    name, milestone, active, self._role
+                )
             else:
                 self._loyalty_manager.update_prize(
-                    prize_id, name, milestone, active, "Admin"
+                    prize_id, name, milestone, active, self._role
                 )
         except (PermissionError, sqlite3.Error, TypeError, ValueError, KeyError) as error:
             self._show_error("Could not save prize", error)
@@ -449,7 +453,7 @@ class LoyaltyCardScreen(BasePage):
         if answer != QMessageBox.StandardButton.Yes:
             return
         try:
-            self._loyalty_manager.remove_prize(selected[0], "Admin")
+            self._loyalty_manager.remove_prize(selected[0], self._role)
         except (PermissionError, sqlite3.Error, KeyError) as error:
             self._show_error("Could not remove prize", error)
             return
@@ -460,7 +464,7 @@ class LoyaltyCardScreen(BasePage):
         if draw_id is None:
             return
         try:
-            draw = self._loyalty_manager.draw_prize(draw_id, "Admin")
+            draw = self._loyalty_manager.draw_prize(draw_id, self._role)
         except (PermissionError, sqlite3.Error, ValueError, KeyError) as error:
             QMessageBox.warning(self, "Could not draw prize", str(error))
             return
@@ -474,7 +478,7 @@ class LoyaltyCardScreen(BasePage):
         if draw_id is None:
             return
         try:
-            self._loyalty_manager.mark_prize_given(draw_id, "Admin")
+            self._loyalty_manager.mark_prize_given(draw_id, self._role)
         except (PermissionError, sqlite3.Error, ValueError, KeyError) as error:
             self._show_error("Could not mark prize given", error)
             return

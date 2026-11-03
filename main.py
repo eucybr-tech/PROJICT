@@ -1,6 +1,7 @@
 import logging
 import sys
 import traceback
+from collections.abc import Callable
 from pathlib import Path
 from types import TracebackType
 
@@ -22,7 +23,8 @@ from PyQt6.QtWidgets import (
 )
 
 from database import Database
-from models import Admin, Staff
+from models import AccountUser, Staff
+from services.account_manager import AccountManager
 from services.client_manager import ClientManager
 from services.gallery_manager import GalleryManager
 from services.appointment_manager import AppointmentManager
@@ -37,6 +39,7 @@ from services.studio_settings_manager import StudioSettingsManager
 from services.schedule_manager import ScheduleManager
 from services.report_manager import ReportManager
 from ui.admin_screens.appointment_calendar_screen import AppointmentCalendarScreen
+from ui.admin_screens.accounts_screen import AccountsScreen
 from ui.admin_screens.client_management_screen import ClientManagementScreen
 from ui.admin_screens.dashboard_screen import DashboardScreen
 from ui.admin_screens.report_payments_screen import ReportPaymentsScreen
@@ -178,13 +181,21 @@ class AdminWindow(BaseWindow):
         report_manager: ReportManager | None = None,
         price_extra_manager: PriceExtraManager | None = None,
         loyalty_web_server: LoyaltyWebServer | None = None,
+        account_user: AccountUser | None = None,
+        account_manager: AccountManager | None = None,
+        logout_callback: Callable[[], None] | None = None,
     ) -> None:
+        if account_user is None or account_user.get_role_name() != "Admin":
+            raise PermissionError("An authenticated Admin account is required")
         self._studio_settings_manager = studio_settings_manager
         self._loyalty_web_server = loyalty_web_server
         self._schedule_manager = schedule_manager
         self._has_report_manager = report_manager is not None
-        super().__init__("Pearl's SigNAILture - Admin")
-        self._admin_role = Admin("Pearl", "admin@pearls-signature.local")
+        self._accounts_manager = account_manager
+        super().__init__(
+            "Pearl's SigNAILture - Admin", account_user, logout_callback
+        )
+        self._admin_role = account_user
         self._service_pricing_page = ServicePricingScreen(
             service_manager,
             pricing_calculator,
@@ -221,7 +232,9 @@ class AdminWindow(BaseWindow):
             else None
         )
         self._loyalty_page = LoyaltyCardScreen(
-            loyalty_manager, loyalty_web_server=loyalty_web_server
+            loyalty_manager,
+            self._admin_role,
+            loyalty_web_server=loyalty_web_server,
         )
         self._loyalty_scan_page = LoyaltyScanScreen(
             loyalty_manager, admin_role=self._admin_role.get_role_name()
@@ -231,6 +244,7 @@ class AdminWindow(BaseWindow):
             StudioSettingsScreen(
                 self._studio_settings_manager,
                 loyalty_web_server=loyalty_web_server,
+                role=self._admin_role,
             )
             if self._studio_settings_manager is not None
             else None
@@ -243,6 +257,11 @@ class AdminWindow(BaseWindow):
         self._schedule_page = (
             ScheduleScreen(self._schedule_manager, self._admin_role)
             if self._schedule_manager is not None
+            else None
+        )
+        self._accounts_page = (
+            AccountsScreen(account_manager, account_user)
+            if account_manager is not None
             else None
         )
         if self._dashboard_page is not None:
@@ -263,6 +282,8 @@ class AdminWindow(BaseWindow):
             self.add_screen("Map", self._map_page, scrollable=True)
         if self._schedule_page is not None:
             self.add_screen("Schedule", self._schedule_page, scrollable=True)
+        if self._accounts_page is not None:
+            self.add_screen("Accounts", self._accounts_page, scrollable=True)
 
         # Arrange this role's navigation as a sidebar beside the shared screen stack.
         base_layout, navigation, screen_stack = _navigation_and_stack(self)
@@ -286,6 +307,7 @@ class AdminWindow(BaseWindow):
         title = QLabel("ADMIN")
         title.setObjectName("appTitle")
         layout.addWidget(title)
+        self.add_account_controls(layout)
         if self._has_report_manager:
             dashboard_button = QPushButton("Dashboard")
             dashboard_button.clicked.connect(lambda: self.show_screen("Dashboard"))
@@ -333,6 +355,10 @@ class AdminWindow(BaseWindow):
             map_button = QPushButton("Map")
             map_button.clicked.connect(lambda: self.show_screen("Map"))
             layout.addWidget(map_button)
+        if self._accounts_manager is not None:
+            accounts_button = QPushButton("Accounts")
+            accounts_button.clicked.connect(lambda: self.show_screen("Accounts"))
+            layout.addWidget(accounts_button)
         if self._schedule_manager is not None:
             schedule_button = QPushButton("Schedule")
             schedule_button.clicked.connect(lambda: self.show_screen("Schedule"))
@@ -352,11 +378,19 @@ class StaffWindow(BaseWindow):
         report_manager: ReportManager | None = None,
         studio_settings_manager: StudioSettingsManager | None = None,
         loyalty_manager: LoyaltyManager | None = None,
+        account_user: AccountUser | None = None,
+        logout_callback: Callable[[], None] | None = None,
     ) -> None:
+        if account_user is None or account_user.get_role_name() not in ("Admin", "Staff"):
+            raise PermissionError("An authenticated Admin or Staff account is required")
         self._has_report_manager = report_manager is not None
         self._loyalty_manager = loyalty_manager
-        super().__init__("Pearl's SigNAILture - Staff")
-        self._staff_role = Staff("Pearl Staff", "staff@pearls-signature.local")
+        self._is_admin_view = account_user.get_role_name() == "Admin"
+        self._back_to_admin_callback: Callable[[], None] | None = None
+        super().__init__(
+            "Pearl's SigNAILture - Staff", account_user, logout_callback
+        )
+        self._staff_role = Staff(account_user.name, account_user.email)
         self._customer_management_page = StaffCustomerScreen(
             client_manager, self._staff_role
         )
@@ -414,6 +448,20 @@ class StaffWindow(BaseWindow):
         title = QLabel("STAFF")
         title.setObjectName("appTitle")
         layout.addWidget(title)
+        if self._is_admin_view:
+            self._view_as_staff_label = QLabel(
+                f"Viewing as Staff (logged in as {self._authenticated_user.name})"
+            )
+            self._view_as_staff_label.setWordWrap(True)
+            layout.addWidget(self._view_as_staff_label)
+            self._back_to_admin_button = QPushButton("Back to Admin")
+            self._back_to_admin_button.clicked.connect(self._back_to_admin)
+            layout.addWidget(self._back_to_admin_button)
+            logout_button = QPushButton("Log out")
+            logout_button.clicked.connect(self._logout)
+            layout.addWidget(logout_button)
+        else:
+            self.add_account_controls(layout)
         if self._has_report_manager:
             dashboard_button = QPushButton("Dashboard")
             dashboard_button.clicked.connect(lambda: self.show_screen("Dashboard"))
@@ -439,6 +487,13 @@ class StaffWindow(BaseWindow):
             layout.addWidget(loyalty_scan_button)
         layout.addStretch()
         return _scrollable_sidebar(sidebar)
+
+    def set_back_to_admin_callback(self, callback: Callable[[], None]) -> None:
+        self._back_to_admin_callback = callback
+
+    def _back_to_admin(self) -> None:
+        if self._back_to_admin_callback is not None:
+            self._back_to_admin_callback()
 
 
 class CustomerWindow(BaseWindow):
@@ -553,6 +608,7 @@ def main() -> int:
 
     database = Database()
     database.initialize_schema()
+    account_manager = AccountManager(database)
     loyalty_manager = LoyaltyManager(database)
     studio_settings_manager = StudioSettingsManager(database)
     loyalty_web_server = LoyaltyWebServer(
@@ -610,7 +666,7 @@ def main() -> int:
                 schedule_manager,
                 studio_settings_manager,
             ),
-            "Staff": lambda: StaffWindow(
+            "Staff": lambda account_user: StaffWindow(
                 client_manager,
                 appointment_manager,
                 pricing_calculator,
@@ -618,8 +674,9 @@ def main() -> int:
                 report_manager,
                 studio_settings_manager=studio_settings_manager,
                 loyalty_manager=loyalty_manager,
+                account_user=account_user,
             ),
-            "Admin": lambda: AdminWindow(
+            "Admin": lambda account_user: AdminWindow(
                 service_manager,
                 pricing_calculator,
                 client_manager,
@@ -632,8 +689,11 @@ def main() -> int:
                 report_manager,
                 price_extra_manager,
                 loyalty_web_server,
+                account_user=account_user,
+                account_manager=account_manager,
             ),
-        }
+        },
+        account_manager,
     )
     chooser.setWindowTitle("Pearl's SigNAILture")
     chooser.resize(620, 240)

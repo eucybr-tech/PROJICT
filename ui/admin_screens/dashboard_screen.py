@@ -114,15 +114,15 @@ class DashboardScreen(BasePage):
 
     def refresh(self) -> None:
         try:
-            today_rows = self._report_manager.today_appointments()
-            upcoming_rows = self._report_manager.upcoming_appointments(7)
+            today_rows = self._report_manager.today_appointments(self._role)
+            upcoming_rows = self._report_manager.upcoming_appointments(self._role, 7)
             self._card_values["today"].setText(str(len(today_rows)))
             self._card_values["pending"].setText(
                 str(self._report_manager.pending_request_count())
             )
             self._card_values["upcoming"].setText(str(len(upcoming_rows)))
             if "view_payments" in self._role.get_permissions():
-                payments = self._report_manager.pending_payments()
+                payments = self._report_manager.pending_payments(self._role)
                 self._card_values["payments"].setText(
                     f"₱ {payments['total_balance']:,.2f}"
                 )
@@ -130,7 +130,7 @@ class DashboardScreen(BasePage):
                 today = datetime.now().date()
                 first_day = today.replace(day=1)
                 self._card_values["revenue"].setText(
-                    f"₱ {self._report_manager.revenue(first_day, today):,.2f}"
+                    f"₱ {self._report_manager.revenue(first_day, today, self._role):,.2f}"
                 )
             self._populate_table(self._today_table, today_rows, show_date=False)
             self._populate_table(self._upcoming_table, upcoming_rows, show_date=True)
