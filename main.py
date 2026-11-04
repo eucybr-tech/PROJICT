@@ -1,15 +1,43 @@
-import logging
-import sys
-import traceback
-from collections.abc import Callable
-from pathlib import Path
-from types import TracebackType
-
-from dotenv import load_dotenv
-
-load_dotenv(Path(__file__).parent / ".env")
-
-from PyQt6.QtCore import QTimer, Qt
+from ui.loyalty_scan_screen import LoyaltyScanScreen
+from ui.branding import LOGO_PATH, brand_circular_pixmap
+from ui.role_chooser import RoleChooser
+from ui.customer_screens.loyalty_screen import LoyaltyScreen
+from ui.customer_screens.gallery_screen import GalleryScreen
+from ui.admin_screens.nail_gallery_screen import NailGalleryScreen
+from ui.admin_screens.map_screen import AdminMapScreen
+from ui.admin_screens.loyalty_card_screen import LoyaltyCardScreen
+from ui.customer_screens.map_screen import MapScreen, StudioInfo
+from ui.customer_screens.catalog_screen import CatalogScreen
+from ui.customer_screens.appointment_screen import CustomerAppointmentScreen
+from ui.customer_screens.queue_screen import QueueScreen
+from ui.staff_screens.staff_customer_screen import StaffCustomerScreen
+from ui.staff_screens.staff_queue_screen import StaffQueueScreen
+from ui.staff_screens.staff_appointment_screen import StaffAppointmentScreen
+from ui.base_window import BaseWindow
+from ui.admin_screens.schedule_screen import ScheduleScreen
+from ui.admin_screens.studio_settings_screen import StudioSettingsScreen
+from ui.admin_screens.service_pricing_screen import ServicePricingScreen
+from ui.admin_screens.report_payments_screen import ReportPaymentsScreen
+from ui.admin_screens.dashboard_screen import DashboardScreen
+from ui.admin_screens.client_management_screen import ClientManagementScreen
+from ui.admin_screens.accounts_screen import AccountsScreen
+from ui.admin_screens.appointment_calendar_screen import AppointmentCalendarScreen
+from services.report_manager import ReportManager
+from services.schedule_manager import ScheduleManager
+from services.studio_settings_manager import StudioSettingsManager
+from services.service_manager import ServiceManager
+from services.queue_manager import QueueManager
+from services.price_extra_manager import PriceExtraManager
+from services.pricing_calculator import PricingCalculator
+from services.notification_service import NotificationService
+from services.loyalty_web_server import LoyaltyWebServer
+from services.loyalty_manager import LoyaltyManager
+from services.appointment_manager import AppointmentManager
+from services.gallery_manager import GalleryManager
+from services.client_manager import ClientManager
+from services.account_manager import AccountManager
+from models import AccountUser, Staff
+from database import Database
 from PyQt6.QtWidgets import (
     QApplication,
     QButtonGroup,
@@ -21,50 +49,21 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from PyQt6.QtCore import QTimer, Qt
+import logging
+import sys
+import traceback
+from collections.abc import Callable
+from pathlib import Path
+from types import TracebackType
 
-from database import Database
-from models import AccountUser, Staff
-from services.account_manager import AccountManager
-from services.client_manager import ClientManager
-from services.gallery_manager import GalleryManager
-from services.appointment_manager import AppointmentManager
-from services.loyalty_manager import LoyaltyManager
-from services.loyalty_web_server import LoyaltyWebServer
-from services.notification_service import NotificationService
-from services.pricing_calculator import PricingCalculator
-from services.price_extra_manager import PriceExtraManager
-from services.queue_manager import QueueManager
-from services.service_manager import ServiceManager
-from services.studio_settings_manager import StudioSettingsManager
-from services.schedule_manager import ScheduleManager
-from services.report_manager import ReportManager
-from ui.admin_screens.appointment_calendar_screen import AppointmentCalendarScreen
-from ui.admin_screens.accounts_screen import AccountsScreen
-from ui.admin_screens.client_management_screen import ClientManagementScreen
-from ui.admin_screens.dashboard_screen import DashboardScreen
-from ui.admin_screens.report_payments_screen import ReportPaymentsScreen
-from ui.admin_screens.service_pricing_screen import ServicePricingScreen
-from ui.admin_screens.studio_settings_screen import StudioSettingsScreen
-from ui.admin_screens.schedule_screen import ScheduleScreen
-from ui.base_window import BaseWindow
-from ui.staff_screens.staff_appointment_screen import StaffAppointmentScreen
-from ui.staff_screens.staff_queue_screen import StaffQueueScreen
-from ui.staff_screens.staff_customer_screen import StaffCustomerScreen
-from ui.customer_screens.queue_screen import QueueScreen
-from ui.customer_screens.appointment_screen import CustomerAppointmentScreen
-from ui.customer_screens.catalog_screen import CatalogScreen
-from ui.customer_screens.map_screen import MapScreen, StudioInfo
-from ui.admin_screens.loyalty_card_screen import LoyaltyCardScreen
-from ui.admin_screens.map_screen import AdminMapScreen
-from ui.admin_screens.nail_gallery_screen import NailGalleryScreen
-from ui.customer_screens.gallery_screen import GalleryScreen
-from ui.customer_screens.loyalty_screen import LoyaltyScreen
-from ui.role_chooser import RoleChooser
-from ui.branding import LOGO_PATH, brand_circular_pixmap
-from ui.loyalty_scan_screen import LoyaltyScanScreen
+from dotenv import load_dotenv
+
+load_dotenv(Path(__file__).parent / ".env")
 
 
-ERROR_LOG_PATH = Path(__file__).resolve().parent / "data" / "application_errors.log"
+ERROR_LOG_PATH = Path(__file__).resolve().parent / \
+    "data" / "application_errors.log"
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -102,10 +101,12 @@ def _size_desktop_window(window: QWidget) -> None:
         return
     available = screen.availableGeometry()
     width = min(1280, max(1, int(available.width() * 0.9)), available.width())
-    height = min(720, max(1, int(available.height() * 0.9)), available.height())
+    height = min(720, max(1, int(available.height() * 0.9)),
+                 available.height())
     window.setMinimumSize(min(1000, width), min(600, height))
     window.setMaximumSize(available.width(), available.height())
-    window.resize(max(window.minimumWidth(), width), max(window.minimumHeight(), height))
+    window.resize(max(window.minimumWidth(), width),
+                  max(window.minimumHeight(), height))
     window.move(
         available.x() + (available.width() - window.width()) // 2,
         available.y() + (available.height() - window.height()) // 2,
@@ -124,7 +125,8 @@ def _navigation_and_stack(
     navigation = navigation_item.widget() if navigation_item else None
     screen_stack = stack_item.widget() if stack_item else None
     if navigation is None or screen_stack is None:
-        raise RuntimeError("Window navigation and screen stack are not initialized")
+        raise RuntimeError(
+            "Window navigation and screen stack are not initialized")
     return layout, navigation, screen_stack
 
 
@@ -250,7 +252,8 @@ class AdminWindow(BaseWindow):
             else None
         )
         self._map_page = (
-            AdminMapScreen(self._studio_settings_manager, self._schedule_manager)
+            AdminMapScreen(self._studio_settings_manager,
+                           self._schedule_manager)
             if self._studio_settings_manager is not None
             else None
         )
@@ -266,18 +269,25 @@ class AdminWindow(BaseWindow):
         )
         if self._dashboard_page is not None:
             self.add_screen("Dashboard", self._dashboard_page, scrollable=True)
-        self.add_screen("Service & Pricing", self._service_pricing_page, scrollable=True)
-        self.add_screen("Client Management", self._client_management_page, scrollable=True)
-        self.add_screen("Appointments", self._appointment_calendar_page, scrollable=True)
-        self.add_screen("Digital Loyalty Card", self._loyalty_page, scrollable=True)
-        self.add_screen("Scan Loyalty Card", self._loyalty_scan_page, scrollable=True)
-        self.add_screen("Nail Gallery", self._nail_gallery_page, scrollable=True)
+        self.add_screen("Service & Pricing",
+                        self._service_pricing_page, scrollable=True)
+        self.add_screen("Client Management",
+                        self._client_management_page, scrollable=True)
+        self.add_screen(
+            "Appointments", self._appointment_calendar_page, scrollable=True)
+        self.add_screen("Digital Loyalty Card",
+                        self._loyalty_page, scrollable=True)
+        self.add_screen("Scan Loyalty Card",
+                        self._loyalty_scan_page, scrollable=True)
+        self.add_screen(
+            "Nail Gallery", self._nail_gallery_page, scrollable=True)
         if self._report_payments_page is not None:
             self.add_screen(
                 "Reports & Payments", self._report_payments_page, scrollable=True
             )
         if self._studio_settings_page is not None:
-            self.add_screen("Studio Settings", self._studio_settings_page, scrollable=True)
+            self.add_screen("Studio Settings",
+                            self._studio_settings_page, scrollable=True)
         if self._map_page is not None:
             self.add_screen("Map", self._map_page, scrollable=True)
         if self._schedule_page is not None:
@@ -303,14 +313,16 @@ class AdminWindow(BaseWindow):
         layout = QVBoxLayout(sidebar)
         layout.setContentsMargins(6, 6, 6, 6)
         layout.setSpacing(4)
-        layout.addWidget(_sidebar_logo(), alignment=Qt.AlignmentFlag.AlignHCenter)
+        layout.addWidget(
+            _sidebar_logo(), alignment=Qt.AlignmentFlag.AlignHCenter)
         title = QLabel("ADMIN")
         title.setObjectName("appTitle")
         layout.addWidget(title)
         self.add_account_controls(layout)
         if self._has_report_manager:
             dashboard_button = QPushButton("Dashboard")
-            dashboard_button.clicked.connect(lambda: self.show_screen("Dashboard"))
+            dashboard_button.clicked.connect(
+                lambda: self.show_screen("Dashboard"))
             layout.addWidget(dashboard_button)
         service_button = QPushButton("Service && Pricing")
         service_button.clicked.connect(
@@ -338,7 +350,8 @@ class AdminWindow(BaseWindow):
         )
         layout.addWidget(loyalty_scan_button)
         gallery_button = QPushButton("Nail Gallery")
-        gallery_button.clicked.connect(lambda: self.show_screen("Nail Gallery"))
+        gallery_button.clicked.connect(
+            lambda: self.show_screen("Nail Gallery"))
         layout.addWidget(gallery_button)
         if self._has_report_manager:
             reports_button = QPushButton("Reports && Payments")
@@ -357,11 +370,13 @@ class AdminWindow(BaseWindow):
             layout.addWidget(map_button)
         if self._accounts_manager is not None:
             accounts_button = QPushButton("Accounts")
-            accounts_button.clicked.connect(lambda: self.show_screen("Accounts"))
+            accounts_button.clicked.connect(
+                lambda: self.show_screen("Accounts"))
             layout.addWidget(accounts_button)
         if self._schedule_manager is not None:
             schedule_button = QPushButton("Schedule")
-            schedule_button.clicked.connect(lambda: self.show_screen("Schedule"))
+            schedule_button.clicked.connect(
+                lambda: self.show_screen("Schedule"))
             layout.addWidget(schedule_button)
         layout.addStretch()
         return _scrollable_sidebar(sidebar)
@@ -382,7 +397,8 @@ class StaffWindow(BaseWindow):
         logout_callback: Callable[[], None] | None = None,
     ) -> None:
         if account_user is None or account_user.get_role_name() not in ("Admin", "Staff"):
-            raise PermissionError("An authenticated Admin or Staff account is required")
+            raise PermissionError(
+                "An authenticated Admin or Staff account is required")
         self._has_report_manager = report_manager is not None
         self._loyalty_manager = loyalty_manager
         self._is_admin_view = account_user.get_role_name() == "Admin"
@@ -419,8 +435,10 @@ class StaffWindow(BaseWindow):
         )
         if self._dashboard_page is not None:
             self.add_screen("Dashboard", self._dashboard_page, scrollable=True)
-        self.add_screen("Client Management", self._customer_management_page, scrollable=True)
-        self.add_screen("Appointments", self._appointment_page, scrollable=True)
+        self.add_screen("Client Management",
+                        self._customer_management_page, scrollable=True)
+        self.add_screen("Appointments", self._appointment_page,
+                        scrollable=True)
         self.add_screen("Queue", self._queue_page, scrollable=True)
         if self._loyalty_manager is not None:
             self.add_screen(
@@ -444,7 +462,8 @@ class StaffWindow(BaseWindow):
         layout = QVBoxLayout(sidebar)
         layout.setContentsMargins(6, 6, 6, 6)
         layout.setSpacing(4)
-        layout.addWidget(_sidebar_logo(), alignment=Qt.AlignmentFlag.AlignHCenter)
+        layout.addWidget(
+            _sidebar_logo(), alignment=Qt.AlignmentFlag.AlignHCenter)
         title = QLabel("STAFF")
         title.setObjectName("appTitle")
         layout.addWidget(title)
@@ -464,7 +483,8 @@ class StaffWindow(BaseWindow):
             self.add_account_controls(layout)
         if self._has_report_manager:
             dashboard_button = QPushButton("Dashboard")
-            dashboard_button.clicked.connect(lambda: self.show_screen("Dashboard"))
+            dashboard_button.clicked.connect(
+                lambda: self.show_screen("Dashboard"))
             layout.addWidget(dashboard_button)
         clients_button = QPushButton("Client Management")
         clients_button.clicked.connect(
@@ -591,7 +611,8 @@ class CustomerWindow(BaseWindow):
                 "border-color: #ad6388; color: white; }"
             )
             button.clicked.connect(
-                lambda _checked=False, name=screen_name: self._navigate_to(name)
+                lambda _checked=False, name=screen_name: self._navigate_to(
+                    name)
             )
             self._nav_buttons[screen_name] = button
             layout.addWidget(button, 1)
@@ -651,7 +672,8 @@ def main() -> int:
         with stylesheet_path.open(encoding="utf-8") as stylesheet_file:
             app.setStyleSheet(stylesheet_file.read())
     except OSError as error:
-        raise RuntimeError(f"Could not load stylesheet at {stylesheet_path}") from error
+        raise RuntimeError(
+            f"Could not load stylesheet at {stylesheet_path}") from error
 
     chooser = RoleChooser(
         {
