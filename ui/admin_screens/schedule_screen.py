@@ -26,6 +26,7 @@ from models import Admin
 from services.schedule_manager import ScheduleManager
 from ui.base_page import BasePage
 from ui.scrollable_dialog import ScrollableDialog
+from ui.style_helpers import style_dialog_buttons
 
 
 class BreakDialog(ScrollableDialog):
@@ -47,6 +48,7 @@ class BreakDialog(ScrollableDialog):
             QDialogButtonBox.StandardButton.Save
             | QDialogButtonBox.StandardButton.Cancel
         )
+        style_dialog_buttons(buttons)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         footer = QHBoxLayout()
@@ -83,6 +85,7 @@ class ClosureDialog(ScrollableDialog):
             QDialogButtonBox.StandardButton.Save
             | QDialogButtonBox.StandardButton.Cancel
         )
+        style_dialog_buttons(buttons)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         footer = QHBoxLayout()
@@ -111,7 +114,8 @@ class ScheduleScreen(BasePage):
         parent: QWidget | None = None,
     ) -> None:
         if "manage_schedule" not in role.get_permissions():
-            raise PermissionError("This role cannot manage the studio schedule")
+            raise PermissionError(
+                "This role cannot manage the studio schedule")
         # Inheritance and dependency injection: Admin receives schedule logic, not SQL access.
         self._schedule_manager = schedule_manager
         self._role = role
@@ -158,6 +162,7 @@ class ScheduleScreen(BasePage):
             form.addRow(weekday, row)
             self._weekly_rows.append((opened, opening, closing))
         save = QPushButton("Save weekly hours")
+        save.setProperty("variant", "primary")
         save.clicked.connect(self.save_weekly_hours)
         layout.addLayout(form)
         layout.addWidget(save, alignment=Qt.AlignmentFlag.AlignRight)
@@ -169,7 +174,9 @@ class ScheduleScreen(BasePage):
         layout = QVBoxLayout(page)
         self._break_list = QListWidget()
         add = QPushButton("Add")
+        add.setProperty("variant", "primary")
         remove = QPushButton("Remove")
+        remove.setProperty("variant", "destructive")
         add.clicked.connect(self.add_break)
         remove.clicked.connect(self.remove_break)
         buttons = QHBoxLayout()
@@ -185,7 +192,9 @@ class ScheduleScreen(BasePage):
         layout = QVBoxLayout(page)
         self._closure_list = QListWidget()
         add = QPushButton("Add")
+        add.setProperty("variant", "primary")
         remove = QPushButton("Remove")
+        remove.setProperty("variant", "destructive")
         add.clicked.connect(self.add_closure)
         remove.clicked.connect(self.remove_closure)
         buttons = QHBoxLayout()
@@ -230,7 +239,8 @@ class ScheduleScreen(BasePage):
         try:
             self._schedule_manager.save_weekly_hours(entries)
         except (sqlite3.Error, TypeError, ValueError) as error:
-            QMessageBox.warning(self, "Could not save weekly hours", str(error))
+            QMessageBox.warning(
+                self, "Could not save weekly hours", str(error))
             return
         QMessageBox.information(self, "Schedule", "Weekly hours saved.")
 

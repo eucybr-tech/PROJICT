@@ -69,6 +69,7 @@ from services.studio_settings_manager import StudioSettingsManager
 from services.loyalty_manager import LoyaltyManager
 from services.loyalty_web_server import LoyaltyWebServer, get_lan_ip
 from ui.scrollable_dialog import ScrollableDialog
+from ui.style_helpers import style_dialog_buttons
 
 try:
     from PyQt6.QtWebEngineWidgets import QWebEngineView
@@ -132,7 +133,8 @@ class HomeServiceMapDialog(ScrollableDialog):
                 self._web_view = QWebEngineView()
                 self._web_view.loadFinished.connect(self._web_load_finished)
                 self._map_stack.addWidget(self._web_view)
-                self._web_view.setUrl(QUrl.fromEncoded(self._embed_url.encode("utf-8")))
+                self._web_view.setUrl(QUrl.fromEncoded(
+                    self._embed_url.encode("utf-8")))
             except (ImportError, RuntimeError):
                 self._web_view = None
                 self._status_label.setText(self._connection_status())
@@ -151,6 +153,7 @@ class HomeServiceMapDialog(ScrollableDialog):
         footer.addWidget(self._open_map_button)
         footer.addStretch()
         close_button = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        style_dialog_buttons(close_button)
         close_button.rejected.connect(self.reject)
         footer.addWidget(close_button)
         content = QVBoxLayout()
@@ -300,6 +303,7 @@ class AppointmentDetailsDialog(ScrollableDialog):
             footer.addWidget(open_button)
         footer.addStretch()
         close_button = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok)
+        style_dialog_buttons(close_button)
         close_button.accepted.connect(self.accept)
         footer.addWidget(close_button)
         self.set_dialog_layout(content, footer)
@@ -323,7 +327,8 @@ class StampQrDialog(QDialog):
         self.image_label.setStyleSheet(
             "background-color: white; border: 1px solid #d8d8d8;"
         )
-        layout.addWidget(self.image_label, alignment=Qt.AlignmentFlag.AlignHCenter)
+        layout.addWidget(self.image_label,
+                         alignment=Qt.AlignmentFlag.AlignHCenter)
 
         self.link_label = QLabel()
         self.link_label.setTextInteractionFlags(
@@ -353,7 +358,9 @@ class StampQrDialog(QDialog):
         layout.addWidget(self.note_label)
 
         self.generate_button = QPushButton("Generate new QR")
-        self.close_buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        self.close_buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Close)
+        style_dialog_buttons(self.close_buttons)
         self.close_buttons.rejected.connect(self.reject)
         footer = QHBoxLayout()
         footer.addWidget(self.generate_button)
@@ -504,6 +511,7 @@ class NewAppointmentDialog(ScrollableDialog):
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
         )
+        style_dialog_buttons(buttons)
         buttons.accepted.connect(self._validate_and_accept)
         buttons.rejected.connect(self.reject)
 
@@ -585,7 +593,8 @@ class NewAppointmentDialog(ScrollableDialog):
         visit_type = self._visit_type.currentData()
         is_home_service = visit_type is VisitType.HOME_SERVICE
         self._address_fields.setVisible(is_home_service)
-        self._travel_fee.setVisible(is_home_service and self._can_record_payments)
+        self._travel_fee.setVisible(
+            is_home_service and self._can_record_payments)
         if is_home_service and self._can_record_payments:
             settings = self._appointment_manager.get_studio_settings()
             self._travel_fee.setValue(settings.default_travel_fee)
@@ -784,7 +793,8 @@ class RescheduleDialog(ScrollableDialog):
         self._time = QTimeEdit()
         self._time.setDisplayFormat("HH:mm")
         self._time.setTime(
-            QTime(appointment_time.hour, appointment_time.minute, appointment_time.second)
+            QTime(appointment_time.hour, appointment_time.minute,
+                  appointment_time.second)
         )
         form = QFormLayout()
         form.addRow("New date", self._date)
@@ -792,6 +802,7 @@ class RescheduleDialog(ScrollableDialog):
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
         )
+        style_dialog_buttons(buttons)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         footer = QHBoxLayout()
@@ -823,6 +834,7 @@ class EditDurationDialog(ScrollableDialog):
             QDialogButtonBox.StandardButton.Save
             | QDialogButtonBox.StandardButton.Cancel
         )
+        style_dialog_buttons(buttons)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         footer = QHBoxLayout()
@@ -860,6 +872,7 @@ class LatePolicyDialog(ScrollableDialog):
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Yes | QDialogButtonBox.StandardButton.Cancel
         )
+        style_dialog_buttons(buttons)
         yes_button = buttons.button(QDialogButtonBox.StandardButton.Yes)
         if yes_button is None:
             raise RuntimeError("Confirmation button was not created")
@@ -914,13 +927,15 @@ class PaymentDialog(ScrollableDialog):
                 "Cancellation fee",
                 QLabel(f"₱ {appointment.cancellation_fee:,.2f}"),
             )
-            form.addRow("Payment method", self._cancellation_fee_payment_method)
+            form.addRow("Payment method",
+                        self._cancellation_fee_payment_method)
             self._amount_paid.setVisible(False)
             self._discount.setVisible(False)
             self._travel_fee.setVisible(False)
             self._payment_note.setVisible(False)
         else:
-            form.addRow("Service price", QLabel(f"₱ {appointment.total_price:,.2f}"))
+            form.addRow("Service price", QLabel(
+                f"₱ {appointment.total_price:,.2f}"))
             form.addRow("Amount paid to date", self._amount_paid)
             form.addRow("Discount", self._discount)
             form.addRow("Travel fee", self._travel_fee)
@@ -929,6 +944,7 @@ class PaymentDialog(ScrollableDialog):
             QDialogButtonBox.StandardButton.Save
             | QDialogButtonBox.StandardButton.Cancel
         )
+        style_dialog_buttons(buttons)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         footer = QHBoxLayout()
@@ -973,7 +989,8 @@ class PaymentDialog(ScrollableDialog):
     @property
     def cancellation_fee_payment_method(self) -> str:
         if self._cancellation_fee_payment_method is None:
-            raise RuntimeError("This dialog is not for a cancellation fee payment")
+            raise RuntimeError(
+                "This dialog is not for a cancellation fee payment")
         return str(self._cancellation_fee_payment_method.currentText())
 
     def _update_preview(self, *_signal_args: object) -> None:
@@ -1002,6 +1019,7 @@ class TravelFeeDialog(ScrollableDialog):
             QDialogButtonBox.StandardButton.Save
             | QDialogButtonBox.StandardButton.Cancel
         )
+        style_dialog_buttons(buttons)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         footer = QHBoxLayout()
@@ -1126,13 +1144,15 @@ class AppointmentPanel(QWidget):
     def _build_ui(self) -> None:
         self._calendar = QCalendarWidget()
         self._calendar.selectionChanged.connect(self._refresh_selected_day)
-        self._calendar.currentPageChanged.connect(self._format_schedule_calendar)
+        self._calendar.currentPageChanged.connect(
+            self._format_schedule_calendar)
 
         self._status_filter = QComboBox()
         self._status_filter.addItems(
             ["All", "Pending", "Confirmed", "Completed", "Cancelled", "No-show"]
         )
-        self._status_filter.currentIndexChanged.connect(self._refresh_selected_day)
+        self._status_filter.currentIndexChanged.connect(
+            self._refresh_selected_day)
         self._view_mode = QComboBox()
         self._view_mode.addItems(["Day", "Week"])
         self._view_mode.currentIndexChanged.connect(self._refresh_selected_day)
@@ -1230,14 +1250,18 @@ class AppointmentPanel(QWidget):
             )
 
         self._new_button = QPushButton("New Appointment")
+        self._new_button.setProperty("variant", "primary")
         self._confirm_button = QPushButton("Confirm")
+        self._confirm_button.setProperty("variant", "primary")
         self._complete_button = QPushButton("Complete")
+        self._complete_button.setProperty("variant", "primary")
         self._cancel_button = QPushButton("Cancel")
         self._reschedule_button = QPushButton("Reschedule")
         self._edit_duration_button = QPushButton("Edit duration")
         self._no_show_button = QPushButton("No-show")
         self._view_on_map_button = QPushButton("View on map")
         self._record_payment_button = QPushButton("Record payment")
+        self._record_payment_button.setProperty("variant", "primary")
         self._edit_travel_fee_button = QPushButton("Edit travel fee")
         self._show_stamp_qr_button = QPushButton("Show stamp QR")
         self._record_payment_button.setVisible(self._can_record_payments)
@@ -1251,10 +1275,13 @@ class AppointmentPanel(QWidget):
         self._edit_duration_button.clicked.connect(self.edit_duration_selected)
         self._no_show_button.clicked.connect(self.mark_no_show_selected)
         self._view_on_map_button.clicked.connect(self.view_selected_on_map)
-        self._record_payment_button.clicked.connect(self.record_payment_selected)
-        self._edit_travel_fee_button.clicked.connect(self.edit_travel_fee_selected)
+        self._record_payment_button.clicked.connect(
+            self.record_payment_selected)
+        self._edit_travel_fee_button.clicked.connect(
+            self.edit_travel_fee_selected)
         self._show_stamp_qr_button.clicked.connect(self.show_stamp_qr_selected)
-        self._appointment_table.itemSelectionChanged.connect(self._update_action_buttons)
+        self._appointment_table.itemSelectionChanged.connect(
+            self._update_action_buttons)
         self._appointment_table.cellDoubleClicked.connect(
             self._show_appointment_details
         )
@@ -1390,7 +1417,8 @@ class AppointmentPanel(QWidget):
             )
             return False
         try:
-            appointment = self._appointment_manager.get_appointment(appointment_id)
+            appointment = self._appointment_manager.get_appointment(
+                appointment_id)
         except (KeyError, sqlite3.Error) as error:
             self._show_error("Could not load appointment", error)
             return False
@@ -1434,7 +1462,8 @@ class AppointmentPanel(QWidget):
                 PermissionError,
                 sqlite3.Error,
             ) as error:
-                self._show_error("Could not record cancellation fee payment", error)
+                self._show_error(
+                    "Could not record cancellation fee payment", error)
                 return False
             self.refresh()
             self._select_appointment(saved_appointment_id)
@@ -1719,10 +1748,12 @@ class AppointmentPanel(QWidget):
         fmt.setBackground(QColor("#f1c5d8"))
         fmt.setForeground(QColor("#553d4b"))
         for appointment in self._appointments:
-            appointment_date = self._as_datetime(appointment.appointment_time).date()
+            appointment_date = self._as_datetime(
+                appointment.appointment_time).date()
             self._highlighted_dates.add(appointment_date)
         for appointment_date in self._highlighted_dates:
-            qt_date = QDate.fromString(appointment_date.isoformat(), "yyyy-MM-dd")
+            qt_date = QDate.fromString(
+                appointment_date.isoformat(), "yyyy-MM-dd")
             self._calendar.setDateTextFormat(qt_date, fmt)
         self._format_schedule_calendar()
 
@@ -1832,7 +1863,8 @@ class AppointmentPanel(QWidget):
                     font.setBold(True)
                     item.setFont(font)
                 if key == "start_time":
-                    item.setData(Qt.ItemDataRole.UserRole, appointment.appointment_id)
+                    item.setData(Qt.ItemDataRole.UserRole,
+                                 appointment.appointment_id)
                 self._appointment_table.setItem(row, column, item)
         self._update_action_buttons()
 
@@ -1845,7 +1877,8 @@ class AppointmentPanel(QWidget):
 
     def show_appointment_details(self, appointment_id: int) -> None:
         try:
-            appointment = self._appointment_manager.get_appointment(appointment_id)
+            appointment = self._appointment_manager.get_appointment(
+                appointment_id)
         except (KeyError, sqlite3.Error) as error:
             self._show_error("Could not load appointment details", error)
             return
@@ -1874,7 +1907,8 @@ class AppointmentPanel(QWidget):
                 details += f"Town: {town}\n"
             if self._can_record_payments:
                 details += f"Travel fee: ₱ {appointment.travel_fee:,.2f}\n"
-            open_address_callback = lambda: self._open_address(
+
+            def open_address_callback(): return self._open_address(
                 appointment.service_address
             )
         if self._can_record_payments:
@@ -2003,7 +2037,8 @@ class AppointmentPanel(QWidget):
                 qr_code = qrcode.QRCode(box_size=10, border=4)
                 qr_code.add_data(link)
                 qr_code.make(fit=True)
-                image = qr_code.make_image(fill_color="black", back_color="white")
+                image = qr_code.make_image(
+                    fill_color="black", back_color="white")
                 image_bytes = BytesIO()
                 image.save(image_bytes, format="PNG")
                 qr_pixmap = QPixmap()

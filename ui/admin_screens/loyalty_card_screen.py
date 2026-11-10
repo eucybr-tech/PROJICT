@@ -29,6 +29,7 @@ from services.loyalty_manager import LoyaltyManager
 from services.loyalty_web_server import LoyaltyWebServer
 from ui.base_page import BasePage
 from ui.scrollable_dialog import ScrollableDialog
+from ui.style_helpers import style_dialog_buttons
 
 
 class StampReversalDialog(ScrollableDialog):
@@ -48,6 +49,7 @@ class StampReversalDialog(ScrollableDialog):
             QDialogButtonBox.StandardButton.Ok
             | QDialogButtonBox.StandardButton.Cancel
         )
+        style_dialog_buttons(buttons)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         footer = QHBoxLayout()
@@ -85,6 +87,7 @@ class PrizeDialog(QDialog):
             QDialogButtonBox.StandardButton.Save
             | QDialogButtonBox.StandardButton.Cancel
         )
+        style_dialog_buttons(buttons)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout = QVBoxLayout(self)
@@ -120,7 +123,8 @@ class LoyaltyCardScreen(BasePage):
     def build_ui(self) -> None:
         self._search_box = QLineEdit()
         self._search_box.setPlaceholderText("Search name or email")
-        self._search_box.textChanged.connect(lambda _text: self._populate_table())
+        self._search_box.textChanged.connect(
+            lambda _text: self._populate_table())
 
         self._client_table = QTableWidget(0, 4)
         self._client_table.setHorizontalHeaderLabels(
@@ -129,14 +133,20 @@ class LoyaltyCardScreen(BasePage):
         self._client_table.setSelectionBehavior(
             QTableWidget.SelectionBehavior.SelectRows
         )
-        self._client_table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
-        self._client_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self._client_table.setSelectionMode(
+            QTableWidget.SelectionMode.SingleSelection)
+        self._client_table.setEditTriggers(
+            QTableWidget.EditTrigger.NoEditTriggers)
         client_header = self._client_table.horizontalHeader()
         client_header.setStretchLastSection(False)
-        client_header.setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
-        client_header.setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
-        client_header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
-        client_header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
+        client_header.setSectionResizeMode(
+            0, QHeaderView.ResizeMode.Interactive)
+        client_header.setSectionResizeMode(
+            1, QHeaderView.ResizeMode.Interactive)
+        client_header.setSectionResizeMode(
+            2, QHeaderView.ResizeMode.ResizeToContents)
+        client_header.setSectionResizeMode(
+            3, QHeaderView.ResizeMode.ResizeToContents)
         self._client_table.setColumnWidth(0, 150)
         self._client_table.setColumnWidth(1, 220)
         self._client_table.setStyleSheet(
@@ -177,14 +187,16 @@ class LoyaltyCardScreen(BasePage):
         content.addWidget(qr_box, 1)
 
         self._stamp_history = QTableWidget(0, 3)
-        self._stamp_history.setHorizontalHeaderLabels(["Date", "Type", "Reason"])
+        self._stamp_history.setHorizontalHeaderLabels(
+            ["Date", "Type", "Reason"])
         self._stamp_history.setSelectionBehavior(
             QTableWidget.SelectionBehavior.SelectRows
         )
         self._stamp_history.setSelectionMode(
             QTableWidget.SelectionMode.SingleSelection
         )
-        self._stamp_history.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self._stamp_history.setEditTriggers(
+            QTableWidget.EditTrigger.NoEditTriggers)
         history_header = self._stamp_history.horizontalHeader()
         history_header.setStretchLastSection(False)
         history_header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
@@ -234,15 +246,18 @@ class LoyaltyCardScreen(BasePage):
         self._prize_table.setSelectionMode(
             QTableWidget.SelectionMode.SingleSelection
         )
-        self._prize_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self._prize_table.setEditTriggers(
+            QTableWidget.EditTrigger.NoEditTriggers)
         self._prize_table.itemSelectionChanged.connect(
             self._update_prize_actions
         )
         self._add_prize_button = QPushButton("Add")
+        self._add_prize_button.setProperty("variant", "primary")
         self._add_prize_button.clicked.connect(self.add_prize)
         self._edit_prize_button = QPushButton("Edit")
         self._edit_prize_button.clicked.connect(self.edit_prize)
         self._remove_prize_button = QPushButton("Remove")
+        self._remove_prize_button.setProperty("variant", "destructive")
         self._remove_prize_button.clicked.connect(self.remove_prize)
         self._edit_prize_button.setEnabled(False)
         self._remove_prize_button.setEnabled(False)
@@ -262,11 +277,15 @@ class LoyaltyCardScreen(BasePage):
         self._draw_table.setSelectionMode(
             QTableWidget.SelectionMode.SingleSelection
         )
-        self._draw_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self._draw_table.itemSelectionChanged.connect(self._update_draw_actions)
+        self._draw_table.setEditTriggers(
+            QTableWidget.EditTrigger.NoEditTriggers)
+        self._draw_table.itemSelectionChanged.connect(
+            self._update_draw_actions)
         self._draw_prize_button = QPushButton("Draw prize")
+        self._draw_prize_button.setProperty("variant", "primary")
         self._draw_prize_button.clicked.connect(self.draw_prize)
         self._mark_given_button = QPushButton("Mark prize given")
+        self._mark_given_button.setProperty("variant", "primary")
         self._mark_given_button.clicked.connect(self.mark_prize_given)
         self._draw_prize_button.setEnabled(False)
         self._mark_given_button.setEnabled(False)
@@ -508,7 +527,8 @@ class LoyaltyCardScreen(BasePage):
         try:
             card = self._loyalty_manager.get_card(email)
             if card is None or card.view_code is None:
-                raise RuntimeError("This client does not have a private card link")
+                raise RuntimeError(
+                    "This client does not have a private card link")
             link = server.build_url(f"/card/{card.view_code}")
         except (OSError, RuntimeError, ValueError, sqlite3.Error) as error:
             QMessageBox.warning(self, "Could not copy card link", str(error))
@@ -525,7 +545,8 @@ class LoyaltyCardScreen(BasePage):
             return
         date_item = self._stamp_history.item(row, 0)
         appointment_id = (
-            date_item.data(Qt.ItemDataRole.UserRole) if date_item is not None else None
+            date_item.data(
+                Qt.ItemDataRole.UserRole) if date_item is not None else None
         )
         if not isinstance(appointment_id, int):
             return
@@ -599,7 +620,8 @@ class LoyaltyCardScreen(BasePage):
                 selected_found = True
         if not selected_found:
             self._qr_preview.setPixmap(QPixmap())
-            self._qr_preview.setText("Select a client to preview their QR card.")
+            self._qr_preview.setText(
+                "Select a client to preview their QR card.")
             self._copy_card_link_button.setEnabled(False)
             self._reverse_stamp_button.setEnabled(False)
             self._stamp_history.setRowCount(0)
@@ -617,13 +639,15 @@ class LoyaltyCardScreen(BasePage):
             self._claim_history.clear()
             self._claim_history_empty.show()
             self._qr_preview.setPixmap(QPixmap())
-            self._qr_preview.setText("Select a client to preview their QR card.")
+            self._qr_preview.setText(
+                "Select a client to preview their QR card.")
             return
         self._copy_card_link_button.setEnabled(False)
         try:
             card = self._loyalty_manager.get_card(email)
             stamp_history = self._loyalty_manager.get_stamp_history(email)
-            claim_history = self._loyalty_manager.get_reward_claim_history(email)
+            claim_history = self._loyalty_manager.get_reward_claim_history(
+                email)
             if card is None:
                 self._qr_preview.setText("QR preview is unavailable.")
                 return

@@ -1,6 +1,6 @@
 from collections.abc import Callable
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import QSize, Qt
 from PyQt6.QtWidgets import (
     QLabel,
     QMainWindow,
@@ -12,6 +12,7 @@ from PyQt6.QtWidgets import (
 )
 
 from ui.branding import brand_icon
+from ui.navigation_icons import navigation_icon
 from models import User
 
 
@@ -54,6 +55,9 @@ class BaseWindow(QMainWindow):
         identity.setWordWrap(True)
         layout.addWidget(identity)
         logout_button = QPushButton("Log out")
+        logout_button.setProperty("navigation", True)
+        logout_button.setIcon(navigation_icon("logout"))
+        logout_button.setIconSize(QSize(18, 18))
         logout_button.clicked.connect(self._logout)
         layout.addWidget(logout_button)
 
@@ -78,7 +82,8 @@ class BaseWindow(QMainWindow):
         if scrollable:
             area = QScrollArea()
             area.setWidgetResizable(True)
-            area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+            area.setHorizontalScrollBarPolicy(
+                Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
             area.setFrameShape(QScrollArea.Shape.NoFrame)
             area.setWidget(screen)
             stacked_widget = area
@@ -89,7 +94,8 @@ class BaseWindow(QMainWindow):
         try:
             screen = self._screens[screen_name]
         except KeyError as error:
-            raise KeyError(f"No screen named {screen_name!r} is registered") from error
+            raise KeyError(
+                f"No screen named {screen_name!r} is registered") from error
         self._stack.setCurrentWidget(self._screen_containers[screen_name])
         refresh = getattr(screen, "refresh", None)
         if callable(refresh):

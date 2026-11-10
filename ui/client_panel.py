@@ -23,6 +23,7 @@ from PyQt6.QtWidgets import (
 from models import Customer, User
 from services.client_manager import ClientManager
 from ui.scrollable_dialog import ScrollableDialog
+from ui.style_helpers import style_dialog_buttons
 
 
 class ClientDialog(ScrollableDialog):
@@ -75,6 +76,7 @@ class ClientDialog(ScrollableDialog):
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
         )
+        style_dialog_buttons(buttons)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
 
@@ -153,23 +155,31 @@ class ClientPanel(QWidget):
         self._client_table.setSelectionBehavior(
             QTableWidget.SelectionBehavior.SelectRows
         )
-        self._client_table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
-        self._client_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self._client_table.setSelectionMode(
+            QTableWidget.SelectionMode.SingleSelection)
+        self._client_table.setEditTriggers(
+            QTableWidget.EditTrigger.NoEditTriggers)
         self._client_table.horizontalHeader().setStretchLastSection(True)
-        self._client_table.itemSelectionChanged.connect(self._show_booking_history)
-        self._client_table.itemSelectionChanged.connect(self._show_client_details)
+        self._client_table.itemSelectionChanged.connect(
+            self._show_booking_history)
+        self._client_table.itemSelectionChanged.connect(
+            self._show_client_details)
         self._client_table.itemSelectionChanged.connect(
             self._update_deposit_button
         )
 
         self._add_button = QPushButton("Add")
+        self._add_button.setProperty("variant", "primary")
         self._edit_button = QPushButton("Edit")
         self._delete_button = QPushButton("Delete")
+        self._delete_button.setProperty("variant", "destructive")
         self._mark_deposit_paid_button = QPushButton("Mark deposit paid")
+        self._mark_deposit_paid_button.setProperty("variant", "primary")
         self._add_button.clicked.connect(self.add_client)
         self._edit_button.clicked.connect(self.edit_selected_client)
         self._delete_button.clicked.connect(self.delete_selected_client)
-        self._mark_deposit_paid_button.clicked.connect(self.mark_selected_deposit_paid)
+        self._mark_deposit_paid_button.clicked.connect(
+            self.mark_selected_deposit_paid)
 
         # Polymorphism: this capability comes from the role's permission contract.
         self._delete_button.setVisible(self._can_delete)
@@ -188,14 +198,16 @@ class ClientPanel(QWidget):
         client_layout.addWidget(self._client_table)
         client_layout.addLayout(controls)
 
-        self._history_empty_label = QLabel("Select a client to view booking history.")
+        self._history_empty_label = QLabel(
+            "Select a client to view booking history.")
         self._history_empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         history_headers = ["Date", "Service", "Status"]
         if self._can_view_payment_details:
             history_headers.append("Total price")
         self._history_table = QTableWidget(0, len(history_headers))
         self._history_table.setHorizontalHeaderLabels(history_headers)
-        self._history_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self._history_table.setEditTriggers(
+            QTableWidget.EditTrigger.NoEditTriggers)
         self._history_table.horizontalHeader().setStretchLastSection(True)
         self._history_table.hide()
 
@@ -265,7 +277,8 @@ class ClientPanel(QWidget):
     def edit_selected_client(self) -> None:
         client = self._selected_client()
         if client is None:
-            QMessageBox.information(self, "Select a client", "Choose a client to edit.")
+            QMessageBox.information(
+                self, "Select a client", "Choose a client to edit.")
             return
         dialog = ClientDialog(
             client,
@@ -292,7 +305,8 @@ class ClientPanel(QWidget):
             return
         client = self._selected_client()
         if client is None:
-            QMessageBox.information(self, "Select a client", "Choose a client to delete.")
+            QMessageBox.information(
+                self, "Select a client", "Choose a client to delete.")
             return
         answer = QMessageBox.question(
             self,
@@ -349,7 +363,8 @@ class ClientPanel(QWidget):
             name_item.setData(Qt.ItemDataRole.UserRole, client.email)
             self._client_table.setItem(row, 0, name_item)
             self._client_table.setItem(row, 1, QTableWidgetItem(client.email))
-            self._client_table.setItem(row, 2, QTableWidgetItem(client.phone or ""))
+            self._client_table.setItem(
+                row, 2, QTableWidgetItem(client.phone or ""))
             if self._can_view_payment_details:
                 self._client_table.setItem(
                     row,
@@ -368,7 +383,8 @@ class ClientPanel(QWidget):
                 self._client_table.selectRow(row)
                 selected_row_found = True
         if not selected_row_found:
-            self._show_empty_history("Select a client to view booking history.")
+            self._show_empty_history(
+                "Select a client to view booking history.")
         self._update_deposit_button()
 
     def _filter_clients(self, _text: str) -> None:
@@ -394,7 +410,8 @@ class ClientPanel(QWidget):
     def _show_booking_history(self) -> None:
         client = self._selected_client()
         if client is None:
-            self._show_empty_history("Select a client to view booking history.")
+            self._show_empty_history(
+                "Select a client to view booking history.")
             return
         try:
             history = self._client_manager.get_booking_history(client.email)
@@ -409,9 +426,12 @@ class ClientPanel(QWidget):
         self._history_table.show()
         self._history_table.setRowCount(len(history))
         for row, record in enumerate(history):
-            self._history_table.setItem(row, 0, QTableWidgetItem(record["date"]))
-            self._history_table.setItem(row, 1, QTableWidgetItem(record["service"]))
-            self._history_table.setItem(row, 2, QTableWidgetItem(record["status"]))
+            self._history_table.setItem(
+                row, 0, QTableWidgetItem(record["date"]))
+            self._history_table.setItem(
+                row, 1, QTableWidgetItem(record["service"]))
+            self._history_table.setItem(
+                row, 2, QTableWidgetItem(record["status"]))
             if self._can_view_payment_details:
                 self._history_table.setItem(
                     row, 3, QTableWidgetItem(f"₱ {record['total_price']:,.2f}")

@@ -1,6 +1,6 @@
 from collections.abc import Callable
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import QSize, Qt
 from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
@@ -11,6 +11,7 @@ from PyQt6.QtWidgets import (
 )
 
 from ui.branding import brand_circular_pixmap, brand_icon
+from ui.navigation_icons import navigation_icon
 from services.account_manager import AccountManager
 from ui.account_dialogs import FirstAdminDialog, LoginDialog
 
@@ -23,9 +24,11 @@ class RoleChooser(QWidget):
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
+        self.setObjectName("roleChooser")
         required_roles = {"Customer", "Staff", "Admin"}
         if set(window_factories) != required_roles:
-            raise ValueError("Provide exactly one window factory for Customer, Staff, and Admin")
+            raise ValueError(
+                "Provide exactly one window factory for Customer, Staff, and Admin")
 
         self._window_factories = window_factories.copy()
         self._account_manager = account_manager
@@ -35,8 +38,8 @@ class RoleChooser(QWidget):
 
     def _build_ui(self) -> None:
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(32, 32, 32, 32)
-        layout.setSpacing(16)
+        layout.setContentsMargins(40, 32, 40, 36)
+        layout.setSpacing(18)
 
         logo = QLabel()
         logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -60,14 +63,24 @@ class RoleChooser(QWidget):
 
         subtitle = QLabel("Choose a view to continue")
         subtitle.setObjectName("subtitle")
+        subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(subtitle)
 
         buttons = QHBoxLayout()
+        role_icons = {
+            "Customer": "customer",
+            "Staff": "staff",
+            "Admin": "admin",
+        }
         for role in ("Customer", "Staff", "Admin"):
             button = QPushButton(role)
-            button.setMinimumHeight(56)
+            button.setProperty("navigation", True)
+            button.setIcon(navigation_icon(role_icons[role]))
+            button.setIconSize(QSize(18, 18))
+            button.setMinimumSize(180, 68)
             button.clicked.connect(
-                lambda checked=False, selected_role=role: self.open_role(selected_role)
+                lambda checked=False, selected_role=role: self.open_role(
+                    selected_role)
             )
             buttons.addWidget(button)
         layout.addLayout(buttons)
@@ -112,7 +125,8 @@ class RoleChooser(QWidget):
             if role == "Staff" and account_user.get_role_name() == "Admin":
                 admin_window = self._open_windows.get("Admin")
                 if admin_window is None:
-                    admin_window = self._window_factories["Admin"](account_user)
+                    admin_window = self._window_factories["Admin"](
+                        account_user)
                     set_logout_callback = getattr(
                         admin_window, "set_logout_callback", None
                     )
@@ -127,11 +141,13 @@ class RoleChooser(QWidget):
             if callable(set_logout_callback):
                 set_logout_callback(
                     lambda: self._return_to_chooser(
-                        role, close_admin=(role == "Staff" and account_user.get_role_name() == "Admin")
+                        role, close_admin=(
+                            role == "Staff" and account_user.get_role_name() == "Admin")
                     )
                 )
             if role == "Staff" and account_user.get_role_name() == "Admin":
-                set_back_callback = getattr(window, "set_back_to_admin_callback", None)
+                set_back_callback = getattr(
+                    window, "set_back_to_admin_callback", None)
                 if callable(set_back_callback):
                     set_back_callback(self._return_to_admin)
             self._open_windows[role] = window

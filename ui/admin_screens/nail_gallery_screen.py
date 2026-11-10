@@ -55,13 +55,15 @@ class GalleryItemDialog(ScrollableDialog):
         super().__init__(parent)
         self._item = item
         self._image_path: str | None = None
-        self.setWindowTitle("Edit Gallery Photo" if item else "Add Gallery Photo")
+        self.setWindowTitle(
+            "Edit Gallery Photo" if item else "Add Gallery Photo")
         self.setMinimumWidth(420)
 
         self._title_input = QLineEdit(item.title if item else "")
         self._description_input = QTextEdit(item.description if item else "")
         self._description_input.setMaximumHeight(100)
-        self._photo_preview = QLabel("Choose a photo" if item is None else "Current photo")
+        self._photo_preview = QLabel(
+            "Choose a photo" if item is None else "Current photo")
         self._photo_preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._photo_preview.setMinimumSize(240, 180)
         self._photo_preview.setMaximumSize(360, 240)
@@ -82,6 +84,7 @@ class GalleryItemDialog(ScrollableDialog):
         form.addRow(self._photo_preview)
 
         save_button = QPushButton("Save")
+        save_button.setProperty("variant", "primary")
         cancel_button = QPushButton("Cancel")
         save_button.clicked.connect(self._accept_if_valid)
         cancel_button.clicked.connect(self.reject)
@@ -145,7 +148,8 @@ class GalleryItemDialog(ScrollableDialog):
 
     def _accept_if_valid(self) -> None:
         if not self.title:
-            QMessageBox.warning(self, "Title required", "Photo title is required.")
+            QMessageBox.warning(self, "Title required",
+                                "Photo title is required.")
             return
         if self._item is None and self._image_path is None:
             QMessageBox.warning(
@@ -198,8 +202,10 @@ class NailGalleryScreen(BasePage):
         self._item_list.itemSelectionChanged.connect(self._update_detail)
 
         self._add_button = QPushButton("Add")
+        self._add_button.setProperty("variant", "primary")
         self._edit_button = QPushButton("Edit")
         self._delete_button = QPushButton("Delete")
+        self._delete_button.setProperty("variant", "destructive")
         self._edit_button.setEnabled(False)
         self._delete_button.setEnabled(False)
         self._add_button.clicked.connect(self.add_item)
@@ -252,7 +258,8 @@ class NailGalleryScreen(BasePage):
         for index, item in enumerate(self._items):
             widget_item = QListWidgetItem(item.title)
             widget_item.setData(Qt.ItemDataRole.UserRole, item.item_id)
-            photo_path = self._gallery_manager.resolve_photo_path(item.photo_path)
+            photo_path = self._gallery_manager.resolve_photo_path(
+                item.photo_path)
             if photo_path.is_file():
                 pixmap = _thumbnail(photo_path, self._cache_key(photo_path))
                 if not pixmap.isNull():
@@ -287,7 +294,8 @@ class NailGalleryScreen(BasePage):
         item = self._selected_item()
         if item is None:
             return
-        current_photo = self._gallery_manager.resolve_photo_path(item.photo_path)
+        current_photo = self._gallery_manager.resolve_photo_path(
+            item.photo_path)
         dialog = GalleryItemDialog(item, current_photo, self)
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return

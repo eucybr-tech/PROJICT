@@ -1,7 +1,7 @@
 import sqlite3
 from pathlib import Path
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import QSize, Qt
 from PyQt6.QtGui import QPainter, QPixmap
 from PyQt6.QtWidgets import (
     QCheckBox,
@@ -35,7 +35,9 @@ from services.price_extra_manager import PriceExtraManager
 from services.pricing_calculator import PricingCalculator
 from services.service_manager import ServiceManager
 from ui.base_page import BasePage
+from ui.navigation_icons import navigation_icon
 from ui.scrollable_dialog import ScrollableDialog
+from ui.style_helpers import style_dialog_buttons
 
 
 class PriceOptionsEditor(QWidget):
@@ -54,10 +56,11 @@ class PriceOptionsEditor(QWidget):
         if header is not None:
             header.setStretchLastSection(True)
         add_button = QPushButton("Add")
+        add_button.setProperty("variant", "primary")
         remove_button = QPushButton("Remove")
+        remove_button.setProperty("variant", "destructive")
         for button in (add_button, remove_button):
             button.setMinimumHeight(34)
-            button.setStyleSheet("padding: 5px 12px;")
         add_button.clicked.connect(self.add_option)
         remove_button.clicked.connect(self.remove_selected)
         buttons = QHBoxLayout()
@@ -102,9 +105,11 @@ class PriceOptionsEditor(QWidget):
             item = self._table.item(row, 0)
             name = item.text().strip() if item else ""
             if not name:
-                raise ValueError(f"Every {self._title.lower()} option needs a name")
+                raise ValueError(
+                    f"Every {self._title.lower()} option needs a name")
             if any(existing.casefold() == name.casefold() for existing in options):
-                raise ValueError(f"Duplicate {self._title.lower()} option: {name}")
+                raise ValueError(
+                    f"Duplicate {self._title.lower()} option: {name}")
             price_widget = self._table.cellWidget(row, 1)
             if not isinstance(price_widget, QDoubleSpinBox):
                 raise ValueError("Option price control is missing")
@@ -155,7 +160,8 @@ class ServiceDialog(ScrollableDialog):
         self._base_price.setRange(0, 1_000_000_000)
         self._base_price.setDecimals(2)
         self._base_price.setPrefix("₱ ")
-        self._base_price.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.NoButtons)
+        self._base_price.setButtonSymbols(
+            QDoubleSpinBox.ButtonSymbols.NoButtons)
         self._base_price.setMinimumHeight(32)
         if service:
             self._base_price.setValue(service.base_price)
@@ -163,9 +169,11 @@ class ServiceDialog(ScrollableDialog):
         self._duration_minutes.setRange(5, 240)
         self._duration_minutes.setSingleStep(5)
         self._duration_minutes.setSuffix(" minutes")
-        self._duration_minutes.setValue(service.duration_minutes if service else 120)
+        self._duration_minutes.setValue(
+            service.duration_minutes if service else 120)
         self._has_length_options = QCheckBox("Has length options")
-        self._has_length_options.setChecked(bool(service and service.length_prices))
+        self._has_length_options.setChecked(
+            bool(service and service.length_prices))
         length_prices = service.length_prices if service else {}
         if not service:
             length_prices = {name: 0.0 for name in self._STANDARD_LENGTHS}
@@ -205,11 +213,11 @@ class ServiceDialog(ScrollableDialog):
             QDialogButtonBox.StandardButton.Save
             | QDialogButtonBox.StandardButton.Cancel
         )
+        style_dialog_buttons(buttons)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         for button in buttons.buttons():
             button.setMinimumHeight(34)
-            button.setStyleSheet("padding: 5px 14px;")
         footer = QHBoxLayout()
         footer.addStretch()
         footer.addWidget(buttons)
@@ -227,7 +235,8 @@ class ServiceDialog(ScrollableDialog):
             else {}
         )
         if self._has_length_options.isChecked() and not length_prices:
-            raise ValueError("Add at least one length option or clear Has length options")
+            raise ValueError(
+                "Add at least one length option or clear Has length options")
         return (
             name,
             self._description_edit.text().strip(),
@@ -260,6 +269,7 @@ class PriceExtraDialog(ScrollableDialog):
             QDialogButtonBox.StandardButton.Save
             | QDialogButtonBox.StandardButton.Cancel
         )
+        style_dialog_buttons(buttons)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         footer = QHBoxLayout()
@@ -328,56 +338,12 @@ class ServicePricingScreen(BasePage):
         self.setObjectName("servicePricingScreen")
         self.setStyleSheet(
             """
-            QWidget#servicePricingScreen QPushButton#servicePricingCategory {
-                background-color: #ffffff;
-                border: 1px solid #ead9d6;
-                border-radius: 8px;
-                color: #8A5A6A;
-                padding: 8px 16px;
-            }
-            QWidget#servicePricingScreen QPushButton#servicePricingCategory:checked {
-                background-color: #F4B4B8;
-                border-color: #d9979d;
-                color: #3f3437;
-            }
             QWidget#servicePricingScreen QTableWidget#servicePricingTable::item:selected {
                 background-color: #f8e5e3;
                 color: #3f3437;
             }
             QWidget#servicePricingScreen QTableWidget#servicePricingTable {
                 font-size: 11px;
-            }
-            QWidget#servicePricingScreen QPushButton#servicePricingAdd {
-                background-color: #F4B4B8;
-                border: 1px solid #d9979d;
-            }
-            QWidget#servicePricingScreen QPushButton#servicePricingEdit {
-                background-color: #ffffff;
-                border: 1px solid #d9979d;
-                color: #8A5A6A;
-                border-radius: 6px;
-                padding: 4px 9px;
-            }
-            QWidget#servicePricingScreen QPushButton#servicePricingDelete {
-                background-color: #ffffff;
-                border: 1px solid #b5545d;
-                color: #a3424d;
-                border-radius: 6px;
-                padding: 4px 9px;
-            }
-            QWidget#servicePricingScreen QPushButton#servicePricingStatus[active="true"] {
-                background-color: #e3f0e5;
-                border: 1px solid #b8d4bd;
-                color: #3f6848;
-                border-radius: 12px;
-                padding: 3px 8px;
-            }
-            QWidget#servicePricingScreen QPushButton#servicePricingStatus[active="false"] {
-                background-color: #eeeae9;
-                border: 1px solid #d7d0ce;
-                color: #625b59;
-                border-radius: 12px;
-                padding: 3px 8px;
             }
             QWidget#servicePricingScreen QComboBox#servicePricingPreviewCombo {
                 padding: 5px 26px 5px 8px;
@@ -395,10 +361,18 @@ class ServicePricingScreen(BasePage):
         category_row = QHBoxLayout()
         category_row.setContentsMargins(0, 0, 0, 0)
         category_row.setSpacing(6)
+        category_icons = {
+            "All": "all",
+            "Services": "services",
+            "Designs": "designs",
+        }
         for category in self._CATEGORY_LABELS:
             button = QPushButton()
             button.setObjectName("servicePricingCategory")
+            button.setProperty("navigation", True)
             button.setCheckable(True)
+            button.setIcon(navigation_icon(category_icons[category]))
+            button.setIconSize(QSize(18, 18))
             button.setMinimumHeight(36)
             self._category_group.addButton(button)
             self._category_buttons[category] = button
@@ -414,6 +388,7 @@ class ServicePricingScreen(BasePage):
         self._search.setPlaceholderText("Search services and designs")
         self._search.textChanged.connect(self._filter_table)
         self._add_button = QPushButton("Add")
+        self._add_button.setProperty("variant", "primary")
         self._add_button.setObjectName("servicePricingAdd")
         self._add_button.setMaximumWidth(76)
         self._add_button.clicked.connect(self.add_selected_kind)
@@ -423,7 +398,8 @@ class ServicePricingScreen(BasePage):
 
         self._service_table = ServicePricingTable(0, 6)
         self._service_table.setObjectName("servicePricingTable")
-        self._headers = ["Picture", "Name", "Duration", "Price", "Status", "Actions"]
+        self._headers = ["Picture", "Name",
+                         "Duration", "Price", "Status", "Actions"]
         self._sort_column = 1
         self._sort_order = Qt.SortOrder.AscendingOrder
         self._service_table.setHorizontalHeaderLabels(self._headers)
@@ -447,8 +423,10 @@ class ServicePricingScreen(BasePage):
             header.setMinimumSectionSize(56)
             header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
             header.setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
-            header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
-            header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
+            header.setSectionResizeMode(
+                2, QHeaderView.ResizeMode.ResizeToContents)
+            header.setSectionResizeMode(
+                3, QHeaderView.ResizeMode.ResizeToContents)
             header.setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)
             header.setSectionResizeMode(5, QHeaderView.ResizeMode.Fixed)
             header.setSortIndicatorShown(False)
@@ -568,7 +546,8 @@ class ServicePricingScreen(BasePage):
     @staticmethod
     def _configure_preview_combo(combo: QComboBox) -> None:
         combo.setObjectName("servicePricingPreviewCombo")
-        combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        combo.setSizePolicy(QSizePolicy.Policy.Expanding,
+                            QSizePolicy.Policy.Fixed)
         combo.setMinimumContentsLength(16)
         combo.setSizeAdjustPolicy(
             QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
@@ -647,7 +626,8 @@ class ServicePricingScreen(BasePage):
         self._service_table.insertRow(row)
         self._service_table.setRowHeight(row, 60)
         self._set_thumbnail(row, "S", "service", service.service_id)
-        name = self._create_entity_item(service.name, "service", service.service_id)
+        name = self._create_entity_item(
+            service.name, "service", service.service_id)
         name.setTextAlignment(
             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
         )
@@ -779,6 +759,7 @@ class ServicePricingScreen(BasePage):
         action_layout.setSpacing(4)
         edit_button = QPushButton("Edit")
         delete_button = QPushButton("Delete")
+        delete_button.setProperty("variant", "destructive")
         edit_button.setObjectName("servicePricingEdit")
         delete_button.setObjectName("servicePricingDelete")
         for button in (edit_button, delete_button):
@@ -899,7 +880,8 @@ class ServicePricingScreen(BasePage):
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
         try:
-            self._service_manager.add_service(self._service_from_dialog(dialog))
+            self._service_manager.add_service(
+                self._service_from_dialog(dialog))
         except (ValueError, TypeError, sqlite3.Error) as error:
             self._show_error("Could not add service", error)
             return
@@ -908,7 +890,8 @@ class ServicePricingScreen(BasePage):
     def _edit_service(self, service_id: int | None) -> None:
         service = self._service_by_id(service_id)
         if service is None:
-            QMessageBox.information(self, "Select a service", "Choose a service to edit.")
+            QMessageBox.information(
+                self, "Select a service", "Choose a service to edit.")
             return
         dialog = ServiceDialog(service, self)
         if dialog.exec() != QDialog.DialogCode.Accepted:
@@ -925,21 +908,24 @@ class ServicePricingScreen(BasePage):
     def edit_selected_service(self) -> None:
         selected = self._selected_entity()
         if selected is None or selected[0] != "service":
-            QMessageBox.information(self, "Select a service", "Choose a service to edit.")
+            QMessageBox.information(
+                self, "Select a service", "Choose a service to edit.")
             return
         self._edit_service(selected[1])
 
     def delete_selected_service(self) -> None:
         selected = self._selected_entity()
         if selected is None or selected[0] != "service":
-            QMessageBox.information(self, "Select a service", "Choose a service to delete.")
+            QMessageBox.information(
+                self, "Select a service", "Choose a service to delete.")
             return
         self._delete_service(selected[1])
 
     def _delete_service(self, service_id: int | None) -> None:
         service = self._service_by_id(service_id)
         if service is None or service.service_id is None:
-            QMessageBox.information(self, "Select a service", "Choose a service to delete.")
+            QMessageBox.information(
+                self, "Select a service", "Choose a service to delete.")
             return
         answer = QMessageBox.question(
             self,
@@ -967,7 +953,8 @@ class ServicePricingScreen(BasePage):
     def _edit_design(self, extra_id: int | None) -> None:
         extra = self._extra_by_id(extra_id)
         if extra is None or self._price_extra_manager is None:
-            QMessageBox.information(self, "Select a design", "Choose a design to edit.")
+            QMessageBox.information(
+                self, "Select a design", "Choose a design to edit.")
             return
         dialog = PriceExtraDialog(extra, self)
         if dialog.exec() != QDialog.DialogCode.Accepted:
@@ -1008,14 +995,16 @@ class ServicePricingScreen(BasePage):
     def toggle_selected_extra(self) -> None:
         extra = self._selected_extra()
         if extra is None:
-            QMessageBox.information(self, "Select a design", "Choose a design first.")
+            QMessageBox.information(
+                self, "Select a design", "Choose a design first.")
             return
         self._toggle_design(extra.extra_id)
 
     def _delete_design(self, extra_id: int | None) -> None:
         extra = self._extra_by_id(extra_id)
         if extra is None or extra.extra_id is None or self._price_extra_manager is None:
-            QMessageBox.information(self, "Select a design", "Choose a design to delete.")
+            QMessageBox.information(
+                self, "Select a design", "Choose a design to delete.")
             return
         answer = QMessageBox.question(
             self,
@@ -1107,7 +1096,8 @@ class ServicePricingScreen(BasePage):
         self._preview_length_label.setVisible(
             bool(service and service.length_prices)
         )
-        self._preview_length.setVisible(bool(service and service.length_prices))
+        self._preview_length.setVisible(
+            bool(service and service.length_prices))
 
         selected_add_ons = self._checked_add_ons()
         self._preview_add_ons.blockSignals(True)
@@ -1213,7 +1203,8 @@ class ServicePricingScreen(BasePage):
         header = self._preview_breakdown.horizontalHeader()
         if header is not None:
             header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-            header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+            header.setSectionResizeMode(
+                1, QHeaderView.ResizeMode.ResizeToContents)
         for row_index, (label_text, amount) in enumerate(rows):
             label = QTableWidgetItem(label_text)
             amount_item = QTableWidgetItem(f"₱ {amount:,.2f}")

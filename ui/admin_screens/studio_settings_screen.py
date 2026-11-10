@@ -95,6 +95,7 @@ class StudioSettingsScreen(BasePage):
         self._loyalty_terms = QTextEdit()
         self._loyalty_terms.setMaximumHeight(150)
         save_button = QPushButton("Save")
+        save_button.setProperty("variant", "primary")
         save_button.clicked.connect(self.save_settings)
 
         form = QFormLayout()
@@ -103,7 +104,8 @@ class StudioSettingsScreen(BasePage):
             self._travel_fee,
         )
         form.addRow("Travel buffer before and after", self._travel_buffer)
-        form.addRow("Cleaning buffer after appointments", self._cleaning_buffer)
+        form.addRow("Cleaning buffer after appointments",
+                    self._cleaning_buffer)
         form.addRow("Service area note", self._service_area_note)
         form.addRow("Allowed towns / municipalities", self._allowed_areas)
         form.addRow("Studio address", self._studio_address)
@@ -136,7 +138,8 @@ class StudioSettingsScreen(BasePage):
             settings = self._settings_manager.get_settings()
             loyalty_web_port = self._settings_manager.get_loyalty_web_port()
         except (sqlite3.Error, TypeError, ValueError) as error:
-            QMessageBox.critical(self, "Could not load studio settings", str(error))
+            QMessageBox.critical(
+                self, "Could not load studio settings", str(error))
             return
         self._travel_fee.setValue(settings.default_travel_fee)
         self._travel_buffer.setValue(settings.travel_buffer_minutes)
@@ -148,7 +151,8 @@ class StudioSettingsScreen(BasePage):
         self._map_latitude.setText(settings.map_latitude)
         self._map_longitude.setText(settings.map_longitude)
         self._map_image_path = settings.map_image_path
-        self._show_map_image(self._resolve_map_image_path(self._map_image_path))
+        self._show_map_image(
+            self._resolve_map_image_path(self._map_image_path))
         self._loyalty_web_port.setValue(loyalty_web_port)
         self._loyalty_facebook.setText(settings.loyalty_facebook)
         self._owner_provider_name.setText(settings.owner_provider_name)

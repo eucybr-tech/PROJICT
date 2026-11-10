@@ -53,13 +53,18 @@ class QueuePanel(QWidget):
         self._queue_table.setSelectionBehavior(
             QTableWidget.SelectionBehavior.SelectRows
         )
-        self._queue_table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
-        self._queue_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self._queue_table.setSelectionMode(
+            QTableWidget.SelectionMode.SingleSelection)
+        self._queue_table.setEditTriggers(
+            QTableWidget.EditTrigger.NoEditTriggers)
         self._queue_table.horizontalHeader().setStretchLastSection(True)
 
         self._add_walk_in_button = QPushButton("Add Walk-in")
+        self._add_walk_in_button.setProperty("variant", "primary")
         self._call_next_button = QPushButton("Call Next")
+        self._call_next_button.setProperty("variant", "primary")
         self._mark_done_button = QPushButton("Mark Done")
+        self._mark_done_button.setProperty("variant", "primary")
         self._cancel_button = QPushButton("Cancel Entry")
         self._skip_button = QPushButton("Skip (not here yet)")
         self._add_walk_in_button.clicked.connect(self.add_walk_in)
@@ -118,7 +123,8 @@ class QueuePanel(QWidget):
         self._update_actions()
 
     def add_walk_in(self) -> None:
-        name, accepted = QInputDialog.getText(self, "Add Walk-in", "Client name:")
+        name, accepted = QInputDialog.getText(
+            self, "Add Walk-in", "Client name:")
         if not accepted:
             return
         try:

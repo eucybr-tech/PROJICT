@@ -35,16 +35,20 @@ class AccountsScreen(BasePage):
             ["Username", "Display name", "Role", "Active", "Account ID"]
         )
         self._table.setColumnHidden(4, True)
-        self._table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self._table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
+        self._table.setSelectionBehavior(
+            QTableWidget.SelectionBehavior.SelectRows)
+        self._table.setSelectionMode(
+            QTableWidget.SelectionMode.SingleSelection)
         self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self._table.itemSelectionChanged.connect(self._update_actions)
 
         self._add_button = QPushButton("Add account")
+        self._add_button.setProperty("variant", "primary")
         self._edit_button = QPushButton("Edit")
         self._reset_button = QPushButton("Reset password")
         self._active_button = QPushButton("Deactivate")
         self._delete_button = QPushButton("Delete")
+        self._delete_button.setProperty("variant", "destructive")
         self._change_password_button = QPushButton("Change my password")
         self._add_button.clicked.connect(self.add_account)
         self._edit_button.clicked.connect(self.edit_account)
@@ -160,7 +164,8 @@ class AccountsScreen(BasePage):
             QMessageBox.warning(self, "Could not reset password", str(error))
             return
         dialog.clear_passwords()
-        QMessageBox.information(self, "Password reset", "The password was reset.")
+        QMessageBox.information(self, "Password reset",
+                                "The password was reset.")
 
     def toggle_active(self) -> None:
         selected = self._selected_account()
@@ -191,7 +196,8 @@ class AccountsScreen(BasePage):
         if answer != QMessageBox.StandardButton.Yes:
             return
         try:
-            self._account_manager.delete_account(self._account_user, account_id)
+            self._account_manager.delete_account(
+                self._account_user, account_id)
         except (PermissionError, sqlite3.Error, ValueError, KeyError) as error:
             QMessageBox.warning(self, "Could not delete account", str(error))
             return
@@ -213,7 +219,8 @@ class AccountsScreen(BasePage):
             QMessageBox.warning(self, "Could not change password", str(error))
             return
         dialog.clear_passwords()
-        QMessageBox.information(self, "Password changed", "Your password was changed.")
+        QMessageBox.information(self, "Password changed",
+                                "Your password was changed.")
 
     def _selected_account(self) -> tuple[int, str, str, bool] | None:
         row = self._table.currentRow()

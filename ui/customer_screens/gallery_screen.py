@@ -82,6 +82,7 @@ class GalleryDetailDialog(ScrollableDialog):
             )
         )
 
+
 class GalleryScreen(BasePage):
     """Customer gallery presented as a narrow, scrollable two-column view."""
 
@@ -145,12 +146,8 @@ class GalleryScreen(BasePage):
     def _build_card(self, item: GalleryItem) -> QWidget:
         card = QPushButton()
         card.setCursor(Qt.CursorShape.PointingHandCursor)
+        card.setProperty("galleryCard", True)
         card.setMinimumHeight(165)
-        card.setStyleSheet(
-            "QPushButton { background: #ffffff; border: 1px solid #eddce5; "
-            "border-radius: 12px; padding: 6px; text-align: center; }"
-            "QPushButton:hover { background: #fff1f7; }"
-        )
         card_layout = QVBoxLayout(card)
         photo = QLabel()
         photo.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -177,7 +174,8 @@ class GalleryScreen(BasePage):
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         card_layout.addWidget(photo, 1)
         card_layout.addWidget(title)
-        card.clicked.connect(lambda _checked=False, entry=item: self._open_detail(entry))
+        card.clicked.connect(lambda _checked=False,
+                             entry=item: self._open_detail(entry))
         return card
 
     def _open_detail(self, item: GalleryItem) -> None:

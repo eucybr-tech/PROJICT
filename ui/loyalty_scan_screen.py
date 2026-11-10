@@ -82,6 +82,7 @@ class LoyaltyScanScreen(BasePage):
         details_form.addRow("Visit", self._waiting_status)
 
         self._add_stamp_button = QPushButton("Add stamp")
+        self._add_stamp_button.setProperty("variant", "primary")
         self._add_stamp_button.setEnabled(False)
         self._add_stamp_button.clicked.connect(self.add_stamp)
         layout = QVBoxLayout(self)
@@ -245,7 +246,8 @@ class LoyaltyScanScreen(BasePage):
                 "again to add its stamp."
             )
         else:
-            self._waiting_status.setText("Stamp added. No completed visit waiting for a stamp.")
+            self._waiting_status.setText(
+                "Stamp added. No completed visit waiting for a stamp.")
 
     def _show_error(self, title: str, error: Exception) -> None:
         QMessageBox.critical(self, title, str(error))

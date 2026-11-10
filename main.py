@@ -1,6 +1,7 @@
 from ui.loyalty_scan_screen import LoyaltyScanScreen
 from ui.branding import LOGO_PATH, brand_circular_pixmap
 from ui.role_chooser import RoleChooser
+from ui.navigation_icons import navigation_icon
 from ui.customer_screens.loyalty_screen import LoyaltyScreen
 from ui.customer_screens.gallery_screen import GalleryScreen
 from ui.admin_screens.nail_gallery_screen import NailGalleryScreen
@@ -41,6 +42,7 @@ from database import Database
 from PyQt6.QtWidgets import (
     QApplication,
     QButtonGroup,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QMainWindow,
@@ -49,7 +51,7 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from PyQt6.QtCore import QTimer, Qt
+from PyQt6.QtCore import QSize, QTimer, Qt
 import logging
 import sys
 import traceback
@@ -96,14 +98,16 @@ def _handle_uncaught_exception(
 def _size_desktop_window(window: QWidget) -> None:
     screen = QApplication.primaryScreen()
     if screen is None:
-        window.setMinimumSize(1000, 600)
-        window.resize(1000, 600)
+        window.setMinimumSize(1024, 640)
+        window.setWindowState(
+            window.windowState() | Qt.WindowState.WindowMaximized)
         return
     available = screen.availableGeometry()
     width = min(1280, max(1, int(available.width() * 0.9)), available.width())
     height = min(720, max(1, int(available.height() * 0.9)),
                  available.height())
-    window.setMinimumSize(min(1000, width), min(600, height))
+    window.setMinimumSize(
+        min(1024, available.width()), min(640, available.height()))
     window.setMaximumSize(available.width(), available.height())
     window.resize(max(window.minimumWidth(), width),
                   max(window.minimumHeight(), height))
@@ -111,6 +115,8 @@ def _size_desktop_window(window: QWidget) -> None:
         available.x() + (available.width() - window.width()) // 2,
         available.y() + (available.height() - window.height()) // 2,
     )
+    window.setWindowState(
+        window.windowState() | Qt.WindowState.WindowMaximized)
 
 
 def _navigation_and_stack(
@@ -133,8 +139,8 @@ def _navigation_and_stack(
 def _sidebar_logo() -> QLabel:
     logo = QLabel()
     logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
-    logo.setFixedSize(88, 88)
-    pixmap = brand_circular_pixmap(88)
+    logo.setFixedSize(56, 56)
+    pixmap = brand_circular_pixmap(56)
     if pixmap.isNull():
         logo.setText("P")
         logo.setStyleSheet(
@@ -147,14 +153,13 @@ def _sidebar_logo() -> QLabel:
 
 
 def _scrollable_sidebar(sidebar: QWidget) -> QScrollArea:
-    sidebar.setFixedWidth(190)
+    sidebar.setFixedWidth(230)
     sidebar.setStyleSheet(
-        "QPushButton { font-size: 12px; padding: 4px 6px; min-height: 22px; }"
         "QLabel#appTitle { font-size: 22px; }"
     )
     scroll_area = QScrollArea()
     scroll_area.setObjectName(f"{sidebar.objectName()}ScrollArea")
-    scroll_area.setFixedWidth(190)
+    scroll_area.setFixedWidth(230)
     scroll_area.setWidgetResizable(True)
     scroll_area.setFrameShape(QScrollArea.Shape.NoFrame)
     scroll_area.setHorizontalScrollBarPolicy(
@@ -165,6 +170,17 @@ def _scrollable_sidebar(sidebar: QWidget) -> QScrollArea:
     )
     scroll_area.setWidget(sidebar)
     return scroll_area
+
+
+def _configure_sidebar_button(
+    button: QPushButton, icon_name: str, group: QButtonGroup
+) -> None:
+    button.setCheckable(True)
+    button.setFixedHeight(36)
+    button.setProperty("navigation", True)
+    button.setIcon(navigation_icon(icon_name))
+    button.setIconSize(QSize(18, 18))
+    group.addButton(button)
 
 
 class AdminWindow(BaseWindow):
@@ -310,9 +326,12 @@ class AdminWindow(BaseWindow):
     def build_navigation(self) -> QWidget:
         sidebar = QWidget()
         sidebar.setObjectName("adminSidebar")
+        navigation_group = QButtonGroup(sidebar)
+        navigation_group.setExclusive(True)
+        navigation_buttons: list[QPushButton] = []
         layout = QVBoxLayout(sidebar)
-        layout.setContentsMargins(6, 6, 6, 6)
-        layout.setSpacing(4)
+        layout.setContentsMargins(4, 4, 4, 4)
+        layout.setSpacing(6)
         layout.addWidget(
             _sidebar_logo(), alignment=Qt.AlignmentFlag.AlignHCenter)
         title = QLabel("ADMIN")
@@ -321,63 +340,97 @@ class AdminWindow(BaseWindow):
         self.add_account_controls(layout)
         if self._has_report_manager:
             dashboard_button = QPushButton("Dashboard")
+            _configure_sidebar_button(
+                dashboard_button, "dashboard", navigation_group)
             dashboard_button.clicked.connect(
                 lambda: self.show_screen("Dashboard"))
             layout.addWidget(dashboard_button)
+            navigation_buttons.append(dashboard_button)
         service_button = QPushButton("Service && Pricing")
+        _configure_sidebar_button(service_button, "services", navigation_group)
         service_button.clicked.connect(
             lambda: self.show_screen("Service & Pricing")
         )
         layout.addWidget(service_button)
+        navigation_buttons.append(service_button)
         client_button = QPushButton("Client Management")
+        _configure_sidebar_button(client_button, "clients", navigation_group)
         client_button.clicked.connect(
             lambda: self.show_screen("Client Management")
         )
         layout.addWidget(client_button)
+        navigation_buttons.append(client_button)
         appointment_button = QPushButton("Appointments")
+        _configure_sidebar_button(
+            appointment_button, "appointments", navigation_group)
         appointment_button.clicked.connect(
             lambda: self.show_screen("Appointments")
         )
         layout.addWidget(appointment_button)
+        navigation_buttons.append(appointment_button)
         loyalty_button = QPushButton("Digital Loyalty Card")
+        _configure_sidebar_button(
+            loyalty_button, "loyalty_card", navigation_group)
         loyalty_button.clicked.connect(
             lambda: self.show_screen("Digital Loyalty Card")
         )
         layout.addWidget(loyalty_button)
+        navigation_buttons.append(loyalty_button)
         loyalty_scan_button = QPushButton("Scan Loyalty Card")
+        _configure_sidebar_button(
+            loyalty_scan_button, "loyalty_scan", navigation_group)
         loyalty_scan_button.clicked.connect(
             lambda: self.show_screen("Scan Loyalty Card")
         )
         layout.addWidget(loyalty_scan_button)
+        navigation_buttons.append(loyalty_scan_button)
         gallery_button = QPushButton("Nail Gallery")
+        _configure_sidebar_button(gallery_button, "gallery", navigation_group)
         gallery_button.clicked.connect(
             lambda: self.show_screen("Nail Gallery"))
         layout.addWidget(gallery_button)
+        navigation_buttons.append(gallery_button)
         if self._has_report_manager:
             reports_button = QPushButton("Reports && Payments")
+            _configure_sidebar_button(
+                reports_button, "reports", navigation_group)
             reports_button.clicked.connect(
                 lambda: self.show_screen("Reports & Payments")
             )
             layout.addWidget(reports_button)
+            navigation_buttons.append(reports_button)
         if self._studio_settings_manager is not None:
             settings_button = QPushButton("Studio Settings")
+            _configure_sidebar_button(
+                settings_button, "settings", navigation_group)
             settings_button.clicked.connect(
                 lambda: self.show_screen("Studio Settings")
             )
             layout.addWidget(settings_button)
+            navigation_buttons.append(settings_button)
             map_button = QPushButton("Map")
+            _configure_sidebar_button(map_button, "map", navigation_group)
             map_button.clicked.connect(lambda: self.show_screen("Map"))
             layout.addWidget(map_button)
+            navigation_buttons.append(map_button)
         if self._accounts_manager is not None:
             accounts_button = QPushButton("Accounts")
+            _configure_sidebar_button(
+                accounts_button, "accounts", navigation_group)
             accounts_button.clicked.connect(
                 lambda: self.show_screen("Accounts"))
             layout.addWidget(accounts_button)
+            navigation_buttons.append(accounts_button)
         if self._schedule_manager is not None:
             schedule_button = QPushButton("Schedule")
+            _configure_sidebar_button(
+                schedule_button, "schedule", navigation_group)
             schedule_button.clicked.connect(
                 lambda: self.show_screen("Schedule"))
             layout.addWidget(schedule_button)
+            navigation_buttons.append(schedule_button)
+        if navigation_buttons:
+            navigation_buttons[0].setChecked(True)
         layout.addStretch()
         return _scrollable_sidebar(sidebar)
 
@@ -459,9 +512,12 @@ class StaffWindow(BaseWindow):
     def build_navigation(self) -> QWidget:
         sidebar = QWidget()
         sidebar.setObjectName("staffSidebar")
+        navigation_group = QButtonGroup(sidebar)
+        navigation_group.setExclusive(True)
+        navigation_buttons: list[QPushButton] = []
         layout = QVBoxLayout(sidebar)
-        layout.setContentsMargins(6, 6, 6, 6)
-        layout.setSpacing(4)
+        layout.setContentsMargins(4, 4, 4, 4)
+        layout.setSpacing(6)
         layout.addWidget(
             _sidebar_logo(), alignment=Qt.AlignmentFlag.AlignHCenter)
         title = QLabel("STAFF")
@@ -474,37 +530,58 @@ class StaffWindow(BaseWindow):
             self._view_as_staff_label.setWordWrap(True)
             layout.addWidget(self._view_as_staff_label)
             self._back_to_admin_button = QPushButton("Back to Admin")
+            self._back_to_admin_button.setProperty("navigation", True)
+            self._back_to_admin_button.setIcon(navigation_icon("back"))
+            self._back_to_admin_button.setIconSize(QSize(18, 18))
             self._back_to_admin_button.clicked.connect(self._back_to_admin)
             layout.addWidget(self._back_to_admin_button)
             logout_button = QPushButton("Log out")
+            logout_button.setProperty("navigation", True)
+            logout_button.setIcon(navigation_icon("logout"))
+            logout_button.setIconSize(QSize(18, 18))
             logout_button.clicked.connect(self._logout)
             layout.addWidget(logout_button)
         else:
             self.add_account_controls(layout)
         if self._has_report_manager:
             dashboard_button = QPushButton("Dashboard")
+            _configure_sidebar_button(
+                dashboard_button, "dashboard", navigation_group)
             dashboard_button.clicked.connect(
                 lambda: self.show_screen("Dashboard"))
             layout.addWidget(dashboard_button)
+            navigation_buttons.append(dashboard_button)
         clients_button = QPushButton("Client Management")
+        _configure_sidebar_button(clients_button, "clients", navigation_group)
         clients_button.clicked.connect(
             lambda: self.show_screen("Client Management")
         )
         layout.addWidget(clients_button)
+        navigation_buttons.append(clients_button)
         appointments_button = QPushButton("Appointments")
+        _configure_sidebar_button(
+            appointments_button, "appointments", navigation_group)
         appointments_button.clicked.connect(
             lambda: self.show_screen("Appointments")
         )
         layout.addWidget(appointments_button)
+        navigation_buttons.append(appointments_button)
         queue_button = QPushButton("Queue")
+        _configure_sidebar_button(queue_button, "queue", navigation_group)
         queue_button.clicked.connect(lambda: self.show_screen("Queue"))
         layout.addWidget(queue_button)
+        navigation_buttons.append(queue_button)
         if self._loyalty_manager is not None:
             loyalty_scan_button = QPushButton("Scan Loyalty Card")
+            _configure_sidebar_button(
+                loyalty_scan_button, "loyalty_scan", navigation_group)
             loyalty_scan_button.clicked.connect(
                 lambda: self.show_screen("Scan Loyalty Card")
             )
             layout.addWidget(loyalty_scan_button)
+            navigation_buttons.append(loyalty_scan_button)
+        if navigation_buttons:
+            navigation_buttons[0].setChecked(True)
         layout.addStretch()
         return _scrollable_sidebar(sidebar)
 
@@ -571,51 +648,40 @@ class CustomerWindow(BaseWindow):
             area.setWidgetResizable(True)
 
     def _size_customer_window(self) -> None:
-        screen = QApplication.primaryScreen()
-        available = screen.availableGeometry() if screen is not None else None
-        width = min(390, available.width()) if available is not None else 390
-        height = min(844, available.height()) if available is not None else 844
-        self.setMinimumSize(min(390, width), min(600, height))
-        self.setMaximumSize(width, height)
-        self.resize(width, height)
-        if available is not None:
-            self.move(
-                available.x() + (available.width() - self.width()) // 2,
-                available.y() + (available.height() - self.height()) // 2,
-            )
+        _size_desktop_window(self)
 
     def build_navigation(self) -> QWidget:
         navigation = QWidget()
-        layout = QHBoxLayout(navigation)
-        layout.setContentsMargins(0, 4, 0, 0)
-        layout.setSpacing(2)
-        navigation.setFixedHeight(58)
+        layout = QGridLayout(navigation)
+        layout.setContentsMargins(4, 4, 4, 4)
+        layout.setHorizontalSpacing(4)
+        layout.setVerticalSpacing(4)
+        navigation.setFixedHeight(124)
         self._nav_buttons: dict[str, QPushButton] = {}
         self._navigation_group = QButtonGroup(navigation)
         self._navigation_group.setExclusive(True)
-        for screen_name in (
-            "Appointment",
-            "Catalog",
-            "Loyalty",
-            "Gallery",
-            "Map",
-            "Queue",
-        ):
+        navigation_items = (
+            ("Appointment", "appointments"),
+            ("Catalog", "catalog"),
+            ("Loyalty", "loyalty_card"),
+            ("Gallery", "gallery"),
+            ("Map", "map"),
+            ("Queue", "queue"),
+        )
+        for index, (screen_name, icon_name) in enumerate(navigation_items):
             button = QPushButton(screen_name)
             button.setCheckable(True)
-            button.setMinimumHeight(48)
+            button.setProperty("navigation", True)
+            button.setIcon(navigation_icon(icon_name))
+            button.setIconSize(QSize(18, 18))
+            button.setFixedHeight(36)
             self._navigation_group.addButton(button)
-            button.setStyleSheet(
-                "QPushButton { font-size: 9px; padding: 5px 2px; }"
-                "QPushButton:checked { background-color: #c8799d; "
-                "border-color: #ad6388; color: white; }"
-            )
             button.clicked.connect(
                 lambda _checked=False, name=screen_name: self._navigate_to(
                     name)
             )
             self._nav_buttons[screen_name] = button
-            layout.addWidget(button, 1)
+            layout.addWidget(button, index // 3, index % 3)
         return navigation
 
     def _navigate_to(self, screen_name: str) -> None:
@@ -718,7 +784,7 @@ def main() -> int:
         account_manager,
     )
     chooser.setWindowTitle("Pearl's SigNAILture")
-    chooser.resize(620, 240)
+    chooser.resize(760, 420)
     chooser.show()
     return app.exec()
 

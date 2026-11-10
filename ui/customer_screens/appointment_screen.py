@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from urllib.parse import quote
 
-from PyQt6.QtCore import QDate, Qt, pyqtSignal
+from PyQt6.QtCore import QDate, QSize, Qt, pyqtSignal
 from PyQt6.QtCore import QUrl
 from PyQt6.QtGui import QPixmap, QDesktopServices, QColor, QTextCharFormat, QMouseEvent
 from PyQt6.QtWidgets import (
@@ -35,6 +35,7 @@ from services.client_manager import ClientManager
 from services.pricing_calculator import PricingCalculator
 from services.service_manager import ServiceManager
 from ui.base_page import BasePage
+from ui.navigation_icons import navigation_icon
 from ui.branding import brand_circular_pixmap, circular_photo_pixmap
 from ui.customer_screens.map_screen import StudioInfo
 
@@ -55,12 +56,6 @@ class CustomerAppointmentScreen(BasePage):
 
     _EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
     _PHONE_PATTERN = re.compile(r"^(?:9\d{9}|09\d{9})$")
-    _GOLD_BUTTON_STYLE = (
-        "QPushButton { background-color: #C8A97E; color: white; "
-        "border: none; border-radius: 12px; padding: 11px 18px; "
-        "font-weight: 700; }"
-        "QPushButton:disabled { background-color: #d8d0c4; color: #f8f6f2; }"
-    )
 
     # Inheritance and dependency injection: the page receives logic services, never SQL access.
     def __init__(
@@ -136,7 +131,7 @@ class CustomerAppointmentScreen(BasePage):
         self._footer_description = QLabel("Choose a service")
         self._footer_description.setWordWrap(True)
         self._footer_button = QPushButton("Continue")
-        self._footer_button.setStyleSheet(self._GOLD_BUTTON_STYLE)
+        self._footer_button.setProperty("variant", "primary")
         self._footer_button.clicked.connect(self._advance_step)
         self._footer = QFrame()
         self._footer.setStyleSheet(
@@ -176,10 +171,11 @@ class CustomerAppointmentScreen(BasePage):
         welcome_text.setWordWrap(True)
         welcome_text.setStyleSheet("border: none;")
         okay_button = QPushButton("Okay")
+        okay_button.setProperty("variant", "primary")
         okay_button.clicked.connect(self._dismiss_welcome)
-        okay_button.setStyleSheet(self._GOLD_BUTTON_STYLE)
         welcome_layout.addWidget(welcome_text)
-        welcome_layout.addWidget(okay_button, alignment=Qt.AlignmentFlag.AlignRight)
+        welcome_layout.addWidget(
+            okay_button, alignment=Qt.AlignmentFlag.AlignRight)
 
         self._service_list_widget = QWidget()
         self._service_list_layout = QVBoxLayout(self._service_list_widget)
@@ -222,7 +218,8 @@ class CustomerAppointmentScreen(BasePage):
         self._calendar.setGridVisible(True)
         self._calendar.setMaximumHeight(270)
         self._calendar.selectionChanged.connect(self._refresh_slots)
-        self._calendar.currentPageChanged.connect(self._format_schedule_calendar)
+        self._calendar.currentPageChanged.connect(
+            self._format_schedule_calendar)
         self._selected_date_label = QLabel()
         self._selected_date_label.setStyleSheet(
             "font-size: 15px; font-weight: 700; color: #765f43;"
@@ -272,7 +269,8 @@ class CustomerAppointmentScreen(BasePage):
         self._comments_input.setPlaceholderText("Comments (optional)")
         self._comments_input.setMaximumHeight(58)
         self._allergies_input = QLineEdit()
-        self._allergies_input.setPlaceholderText("Any allergies? (enter None if none)")
+        self._allergies_input.setPlaceholderText(
+            "Any allergies? (enter None if none)")
         self._address_label = QLabel(
             "Full address (house no., street, barangay) *"
         )
@@ -377,9 +375,10 @@ class CustomerAppointmentScreen(BasePage):
             alignment=Qt.AlignmentFlag.AlignHCenter,
         )
         another_button = QPushButton("Book another")
-        another_button.setStyleSheet(self._GOLD_BUTTON_STYLE)
+        another_button.setProperty("variant", "primary")
         another_button.clicked.connect(self._start_new_request)
-        layout.addWidget(another_button, alignment=Qt.AlignmentFlag.AlignHCenter)
+        layout.addWidget(
+            another_button, alignment=Qt.AlignmentFlag.AlignHCenter)
         layout.addStretch()
         return page
 
@@ -392,13 +391,15 @@ class CustomerAppointmentScreen(BasePage):
             back_button = QToolButton()
             back_button.setText("‹")
             back_button.setStyleSheet("font-size: 26px; border: none;")
-            back_button.clicked.connect(lambda: self._show_step(self._step_stack.currentIndex() - 1))
+            back_button.clicked.connect(lambda: self._show_step(
+                self._step_stack.currentIndex() - 1))
             top.addWidget(back_button)
         logo = self._brand_image("logo.png", "P")
         top.addWidget(logo)
         name = QLabel(self._studio_info.studio_name)
         name.setWordWrap(True)
-        name.setStyleSheet("font-size: 17px; font-weight: 700; color: #765f43;")
+        name.setStyleSheet(
+            "font-size: 17px; font-weight: 700; color: #765f43;")
         top.addWidget(name, 1)
         layout.addLayout(top)
 
@@ -423,7 +424,8 @@ class CustomerAppointmentScreen(BasePage):
         image = QLabel()
         image.setFixedSize(42, 42)
         image.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        path = Path(__file__).resolve().parents[2] / "assets" / "branding" / filename
+        path = Path(__file__).resolve(
+        ).parents[2] / "assets" / "branding" / filename
         pixmap = (
             brand_circular_pixmap(42)
             if filename == "logo.png"
@@ -486,12 +488,12 @@ class CustomerAppointmentScreen(BasePage):
             row_layout = QHBoxLayout(row)
             row_layout.setContentsMargins(5, 4, 5, 4)
             row_layout.setSpacing(4)
-            image = QLabel("✧")
+            image = QLabel()
             image.setFixedSize(38, 38)
             image.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            image.setPixmap(navigation_icon("services").pixmap(QSize(20, 20)))
             image.setStyleSheet(
-                "background: #f5e8dc; border-radius: 9px; color: #9b7954; "
-                "font-size: 18px;"
+                "background: #F3F4F6; border-radius: 8px;"
             )
             info_widget = QWidget()
             info_widget.setAttribute(
@@ -506,28 +508,27 @@ class CustomerAppointmentScreen(BasePage):
             name_label = QLabel(service.name)
             name_label.setWordWrap(True)
             name_label.setStyleSheet(
-                "font-weight: 700; color: #765f43; border: none;"
+                "font-weight: 600; color: #5E3A56; border: none;"
             )
             details_line = QLabel(self._service_description(service))
             details_line.setWordWrap(True)
-            details_line.setStyleSheet("font-size: 11px; border: none;")
+            details_line.setStyleSheet(
+                "font-size: 11px; color: #374151; border: none;"
+            )
             info.addWidget(name_label)
             info.addWidget(details_line)
             details = QPushButton("Details")
-            details.setFixedWidth(52)
-            details.setStyleSheet("border: none; color: #765f43;")
+            details.setFixedWidth(72)
+            details.setProperty("variant", "secondary")
             details.clicked.connect(
-                lambda _checked=False, item=service: self._show_service_details(item)
+                lambda _checked=False, item=service: self._show_service_details(
+                    item)
             )
             selected = service.service_id == self._selected_service_id
             selection_mark = QToolButton()
             selection_mark.setText("✓" if selected else "+")
-            selection_mark.setFixedSize(30, 30)
-            selection_mark.setStyleSheet(
-                "QToolButton { border: 1px solid #C8A97E; border-radius: 15px; "
-                "color: #765f43; font-weight: 700; }"
-                "QToolButton:hover { background: #C8A97E; color: white; }"
-            )
+            selection_mark.setFixedSize(34, 34)
+            selection_mark.setProperty("serviceSelected", selected)
             selection_mark.clicked.connect(
                 lambda _checked=False, item=service: self._select_service(item)
             )
@@ -540,7 +541,8 @@ class CustomerAppointmentScreen(BasePage):
             )
             self._service_list_layout.addWidget(row)
             if selected_service is service:
-                self._service_list_layout.addWidget(self._build_customize_panel(service))
+                self._service_list_layout.addWidget(
+                    self._build_customize_panel(service))
         self._service_list_layout.addStretch()
 
     def _service_description(self, service: Service) -> str:
@@ -606,7 +608,8 @@ class CustomerAppointmentScreen(BasePage):
                 chip.setChecked(name == self._selected_length)
                 chip.setStyleSheet(self._chip_style())
                 chip.clicked.connect(
-                    lambda _checked=False, length=name: self._select_length(length)
+                    lambda _checked=False, length=name: self._select_length(
+                        length)
                 )
                 group.addButton(chip)
                 length_row.addWidget(chip)
@@ -623,7 +626,8 @@ class CustomerAppointmentScreen(BasePage):
                 chip.setChecked(name in self._selected_add_ons)
                 chip.setStyleSheet(self._chip_style())
                 chip.clicked.connect(
-                    lambda checked, add_on=name: self._toggle_add_on(add_on, checked)
+                    lambda checked, add_on=name: self._toggle_add_on(
+                        add_on, checked)
                 )
                 add_on_row.addWidget(chip, index // 2, index % 2)
             layout.addLayout(add_on_row)
@@ -659,7 +663,8 @@ class CustomerAppointmentScreen(BasePage):
             lambda checked: checked and self._set_visit_type(VisitType.STUDIO)
         )
         self._home_visit_button.toggled.connect(
-            lambda checked: checked and self._set_visit_type(VisitType.HOME_SERVICE)
+            lambda checked: checked and self._set_visit_type(
+                VisitType.HOME_SERVICE)
         )
         visit_buttons.addWidget(self._studio_visit_button)
         visit_buttons.addWidget(self._home_visit_button)
@@ -787,7 +792,8 @@ class CustomerAppointmentScreen(BasePage):
         self._update_footer_for_step()
 
     def _show_step(self, index: int) -> None:
-        self._step_stack.setCurrentIndex(max(0, min(index, self._step_stack.count() - 1)))
+        self._step_stack.setCurrentIndex(
+            max(0, min(index, self._step_stack.count() - 1)))
         self._update_footer_for_step()
 
     def _update_footer_for_step(self) -> None:
@@ -855,7 +861,8 @@ class CustomerAppointmentScreen(BasePage):
         self._slot_buttons = []
         service = self._selected_service()
         if service is None:
-            self._slots_grid.addWidget(QLabel("Choose a service first."), 0, 0, 1, 2)
+            self._slots_grid.addWidget(
+                QLabel("Choose a service first."), 0, 0, 1, 2)
             self._update_footer_for_step()
             return
         try:
@@ -865,7 +872,8 @@ class CustomerAppointmentScreen(BasePage):
                 self._visit_type,
             )
         except (sqlite3.Error, TypeError, ValueError) as error:
-            QMessageBox.critical(self, "Could not load available times", str(error))
+            QMessageBox.critical(
+                self, "Could not load available times", str(error))
             slots = []
         if not slots:
             self._slots_grid.addWidget(
@@ -874,12 +882,9 @@ class CustomerAppointmentScreen(BasePage):
         for index, slot in enumerate(slots):
             button = QPushButton(self._format_time(slot))
             button.setCheckable(True)
-            button.setStyleSheet(
-                "QPushButton { background: white; border: 1px solid #d9c9b2; "
-                "border-radius: 10px; padding: 8px; }"
-                "QPushButton:checked { background: #C8A97E; color: white; }"
-            )
-            button.clicked.connect(lambda _checked=False, value=slot: self._select_slot(value))
+            button.setProperty("selectionChoice", True)
+            button.clicked.connect(lambda _checked=False,
+                                   value=slot: self._select_slot(value))
             self._slots_grid.addWidget(button, index // 2, index % 2)
             self._slot_buttons.append(button)
         self._slots_grid.setRowStretch((len(slots) + 1) // 2, 1)
@@ -922,7 +927,8 @@ class CustomerAppointmentScreen(BasePage):
                 )
                 return
             if not town:
-                self._validation_error("Please enter the town or municipality.")
+                self._validation_error(
+                    "Please enter the town or municipality.")
                 return
             if not self._appointment_manager.is_home_service_area_allowed(town):
                 self._validation_error(
@@ -933,7 +939,8 @@ class CustomerAppointmentScreen(BasePage):
             self._validation_error("Please agree to the booking policies.")
             return
         if service is None or self._selected_slot is None:
-            self._validation_error("Please choose a service and available time.")
+            self._validation_error(
+                "Please choose a service and available time.")
             return
         service_id = service.service_id
         requested_time = self._selected_slot
@@ -1005,13 +1012,13 @@ class CustomerAppointmentScreen(BasePage):
                 else ""
             )
             + (
-            f"Nail length: {self._selected_length or '—'}\n"
-            f"Add-ons: {', '.join(sorted(self._selected_add_ons)) or 'None'}\n"
-            f"Extras: {', '.join(sorted(self._selected_extras)) or 'None'}\n"
-            f"Date: {requested_time.strftime('%A %d %B %Y')}\n"
-            f"Start time: {self._format_time(requested_time)}\n"
-            f"{estimated_total_label}: "
-            f"₱{appointment.total_price:,.2f}"
+                f"Nail length: {self._selected_length or '—'}\n"
+                f"Add-ons: {', '.join(sorted(self._selected_add_ons)) or 'None'}\n"
+                f"Extras: {', '.join(sorted(self._selected_extras)) or 'None'}\n"
+                f"Date: {requested_time.strftime('%A %d %B %Y')}\n"
+                f"Start time: {self._format_time(requested_time)}\n"
+                f"{estimated_total_label}: "
+                f"₱{appointment.total_price:,.2f}"
             )
         )
         self._summary_label.setText(self._confirmation_summary)
@@ -1020,7 +1027,8 @@ class CustomerAppointmentScreen(BasePage):
         )
         if self._last_home_address:
             self._studio_info.set_customer_address(self._last_home_address)
-        self._open_confirmation_address.setVisible(bool(self._last_home_address))
+        self._open_confirmation_address.setVisible(
+            bool(self._last_home_address))
         self._show_step(3)
 
     def _selected_service(self) -> Service | None:
